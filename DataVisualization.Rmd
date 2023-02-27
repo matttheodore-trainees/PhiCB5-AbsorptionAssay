@@ -1,0 +1,61 @@
+---
+title: "Untitled"
+author: "Arihan Gupta"
+date: "2023-02-22"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(readxl)
+library(matrixStats)
+library(dplyr)
+strains <- c("NA1000", "NA1000 delta pilA", "bNY30A", "-ctrl")
+rowNum = 13
+dfMasters <- data.frame()
+omitted <- c()
+dfFinal <- data.frame()
+
+```
+
+```{r}
+for(experiment in 1:4)
+{
+  df <- read_excel("/Users/arihangupta/Downloads/Plate titer data (1).xlsx", range = paste0("B", rowNum,":B",rowNum+3), col_names = FALSE)
+  df <- rbind(df, read_excel("/Users/arihangupta/Downloads/Plate titer data (1).xlsx", range = paste0("C", rowNum,":C",rowNum+3), col_names = FALSE))
+  df <- rbind(df, read_excel("/Users/arihangupta/Downloads/Plate titer data (1).xlsx", range = paste0("D", rowNum,":D",rowNum+3), col_names = FALSE))
+  exp <- rep(paste0(experiment),12)
+  exp <- as.data.frame(exp)
+  strains <- data.frame(strains)
+  stains <- rep(paste0(strains),3)
+  dfFinal <- data.frame(df, exp, strains)
+  dfMasters <- rbind(dfMasters, dfFinal)
+  rowNum = rowNum + 6
+}
+colnames(dfMasters) <- c("PFU", "Experiment", "Strain")
+```
+
+```{r}
+for(experiment in 1:4)
+{
+  df <- read_excel("/Users/arihangupta/Downloads/Plate titer data (1).xlsx", range = paste0("J", rowNum,":J",rowNum+3), col_names = FALSE)
+  df <- rbind(df, read_excel("/Users/arihangupta/Downloads/Plate titer data (1).xlsx", range = paste0("K", rowNum,":K",rowNum+3), col_names = FALSE))
+  df <- rbind(df, read_excel("/Users/arihangupta/Downloads/Plate titer data (1).xlsx", range = paste0("L", rowNum,":L",rowNum+3), col_names = FALSE))
+  exp <- rep(paste0(experiment),12)
+  exp <- as.data.frame(exp)
+  strains <- data.frame(strains)
+  stains <- rep(paste0(strains),3)
+  dfFinal <- data.frame(df, exp, strains)
+  dfMasters <- rbind(dfMasters, dfFinal)
+  rowNum = rowNum + 6
+}
+colnames(dfMasters) <- c("Normalized_PFU", "Experiment", "Strain")
+```
+
+```{r}
+dfMasters$PFU <- unlist(dfMasters$PFU)
+dfMasters$strains <- unlist(dfMasters$strains)
+p1 <- ggplot(dfMasters, aes(Strain, PFU)) + geom_boxplot() + geom_point()
+
+p1
+```
