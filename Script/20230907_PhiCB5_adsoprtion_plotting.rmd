@@ -27,9 +27,9 @@ R.version
 
 ```
 
-# Checking and installing packages
-
-```{r, results = 'hide'}
+# # Checking and installing packages, specific to plotting
+#
+```{r eval=FALSE, include=FALSE}
 
 packages <- c("ggplot2", "dplyr", "tidyr", "readxl", "ggpubr", "skimr", "DataExplorer", "tidyverse", "skimr", "svglite", "readxl","tidyxl", "ggforce", "ggpubr", "ggsci", "ggthemes", "ragg", "magrittr", "reprex", "patchwork", "writexl", 'magick', 'forcats')
 
@@ -49,98 +49,29 @@ library(packages[i], character.only = TRUE)
 ```
 
 
-# Importing the data from Master Excel Sheet
-
-need to also rename from strain number to relevant genotype
-
 ```{r}
 
-october28 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
-    range = "C3:E11", col_names = FALSE)
 
-colnames(october28) <- c("strain", "plaques", "titer")
+rawdata <- read_excel("Data/2023_09_08_final_long_format_adsorption_titers.xlsx", 
+    col_types = c("text", "date", "numeric", 
+        "numeric"))
 
-october28 <- mutate(october28, strain = as.character(strain), date = as.Date("2021-10-28"), incubation_time = as.factor(18))
-
-##
-
-november2 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
-    range = "C20:E43", col_names = FALSE)
-
-colnames(november2) <- c("strain", "plaques", "titer")
-
-november2 <- mutate(november2, strain = as.character(strain), date = as.Date("2021-11-2"), incubation_time = as.factor(18))
-
-##
-
-november8 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
-    range = "C50:E73", col_names = FALSE)
-
-colnames(november8 ) <- c("strain", "plaques", "titer")
-
-november8  <- mutate(november8 , strain = as.character(strain), date = as.Date("2021-11-8"), incubation_time = as.factor(18))
-
-##
-
-november10 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
-    range = "C81:E104", col_names = FALSE)
-
-colnames(november10) <- c("strain", "plaques", "titer")
-
-november10 <- mutate(november10, strain = as.character(strain), date = as.Date("2021-10-28"), incubation_time = as.factor(18))
-
-## now for the 48 hours
-
-
-november3 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
-    range = "J20:L46", col_names = FALSE)
-
-colnames(november3) <- c("strain", "plaques", "titer")
-
-november3 <- mutate(november3, strain = as.character(strain), date = as.Date("2021-11-03"), incubation_time = as.factor(48))
-
-##
-
-november9 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
-    range = "J50:L73", col_names = FALSE)
-
-colnames(november9) <- c("strain", "plaques", "titer")
-
-november9 <- mutate(november9, strain = as.character(strain), date = as.Date("2021-11-09"), incubation_time = as.factor(48))
-
-##
-
-november10_48 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
-    range = "J81:L106", col_names = FALSE)
-
-colnames(november10_48) <- c("strain", "plaques", "titer")
-
-november10_48 <- mutate(november10_48, strain = as.character(strain), date = as.Date("2021-11-10"), incubation_time = as.factor(48))
-
-Rawdata <- rbind(november10, november10_48, november3, november8, november9, november2)
-
-write_xlsx(Rawdata, "Data/RawData.xlsx")
-
-
-
-```
-
-
-```{r}
-
-data1 <- Rawdata %>% 
+data1 <- rawdata |>
+  rename(strain = Sample, rep = `technical replicate`) |>
   mutate(genotype = case_when(
-    grepl("221", .$strain) ~ "bNY30a_parent",
-    grepl("22222", .$strain) ~ "hfsA+",
-    grepl("22223.", .$strain) ~ "wt",
-    grepl("224", .$strain) ~ "delCpaF",
-    grepl("225", .$strain) ~ "CpaF",
-    grepl("226", .$strain) ~ "CpaF(ab)",
-    grepl("228", .$strain) ~ "CpaF(I355C)",
-    grepl("229", .$strain) ~ "CpaF(D310N)",
-    grepl("230.", .$strain) ~ "CpaF(F244L/K245R)"
-  )) 
-
+    grepl("208", strain) ~ "NA1000",
+    grepl("209", strain) ~ "NA1000 ▲pilA",
+    grepl("221", strain) ~ "bNY30a pilAT36C",
+    grepl("negative control", strain) ~ "No Cell Control",
+    grepl("22222", strain) ~ "hfsA+",
+    grepl("22223.", strain) ~ "wt",
+    grepl("224", strain) ~ "delCpaF",
+    grepl("225", strain) ~ "CpaF",
+    grepl("226", strain) ~ "CpaF(ab)",
+    grepl("228", strain) ~ "CpaF(I355C)",
+    grepl("229", strain) ~ "CpaF(D310N)",
+    grepl("230.", strain) ~ "CpaF(F244L/K245R)"
+  ))
 
 
 unique(data1$genotype)
