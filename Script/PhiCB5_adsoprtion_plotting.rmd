@@ -1,0 +1,352 @@
+---
+title: "CpaF_mutant_EOP"
+author: "MT"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Housekeeping
+
+```{r}
+date()
+Sys.time()
+getwd()
+list.files()
+.libPaths()
+.Library
+sessionInfo()
+search()
+searchpaths()
+R.version
+
+
+```
+
+# Checking and installing packages
+
+```{r, results = 'hide'}
+
+packages <- c("ggplot2", "dplyr", "tidyr", "readxl", "ggpubr", "skimr", "DataExplorer", "tidyverse", "skimr", "svglite", "readxl","tidyxl", "ggforce", "ggpubr", "ggsci", "ggthemes", "ragg", "magrittr", "reprex", "patchwork", "writexl", 'magick', 'forcats')
+
+# list of packages sometimes I use [   "searcher", "errorist",
+
+install.packages(setdiff(packages, rownames(installed.packages())))
+
+update.packages (packages)
+
+for (i in 1:length(packages)) {
+
+library(packages[i], character.only = TRUE)
+
+
+}
+
+```
+
+
+# Importing the data from Master Excel Sheet
+
+need to also rename from strain number to relevant genotype
+
+```{r}
+
+october28 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
+    range = "C3:E11", col_names = FALSE)
+
+colnames(october28) <- c("strain", "plaques", "titer")
+
+october28 <- mutate(october28, strain = as.character(strain), date = as.Date("2021-10-28"), incubation_time = as.factor(18))
+
+##
+
+november2 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
+    range = "C20:E43", col_names = FALSE)
+
+colnames(november2) <- c("strain", "plaques", "titer")
+
+november2 <- mutate(november2, strain = as.character(strain), date = as.Date("2021-11-2"), incubation_time = as.factor(18))
+
+##
+
+november8 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
+    range = "C50:E73", col_names = FALSE)
+
+colnames(november8 ) <- c("strain", "plaques", "titer")
+
+november8  <- mutate(november8 , strain = as.character(strain), date = as.Date("2021-11-8"), incubation_time = as.factor(18))
+
+##
+
+november10 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
+    range = "C81:E104", col_names = FALSE)
+
+colnames(november10) <- c("strain", "plaques", "titer")
+
+november10 <- mutate(november10, strain = as.character(strain), date = as.Date("2021-10-28"), incubation_time = as.factor(18))
+
+## now for the 48 hours
+
+
+november3 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
+    range = "J20:L46", col_names = FALSE)
+
+colnames(november3) <- c("strain", "plaques", "titer")
+
+november3 <- mutate(november3, strain = as.character(strain), date = as.Date("2021-11-03"), incubation_time = as.factor(48))
+
+##
+
+november9 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
+    range = "J50:L73", col_names = FALSE)
+
+colnames(november9) <- c("strain", "plaques", "titer")
+
+november9 <- mutate(november9, strain = as.character(strain), date = as.Date("2021-11-09"), incubation_time = as.factor(48))
+
+##
+
+november10_48 <- read_excel("Data/Triplicate Plate Titer EOP for Caulobacter.xlsx", 
+    range = "J81:L106", col_names = FALSE)
+
+colnames(november10_48) <- c("strain", "plaques", "titer")
+
+november10_48 <- mutate(november10_48, strain = as.character(strain), date = as.Date("2021-11-10"), incubation_time = as.factor(48))
+
+Rawdata <- rbind(november10, november10_48, november3, november8, november9, november2)
+
+write_xlsx(Rawdata, "Data/RawData.xlsx")
+
+
+
+```
+
+
+```{r}
+
+data1 <- Rawdata %>% 
+  mutate(genotype = case_when(
+    grepl("221", .$strain) ~ "bNY30a_parent",
+    grepl("22222", .$strain) ~ "hfsA+",
+    grepl("22223.", .$strain) ~ "wt",
+    grepl("224", .$strain) ~ "delCpaF",
+    grepl("225", .$strain) ~ "CpaF",
+    grepl("226", .$strain) ~ "CpaF(ab)",
+    grepl("228", .$strain) ~ "CpaF(I355C)",
+    grepl("229", .$strain) ~ "CpaF(D310N)",
+    grepl("230.", .$strain) ~ "CpaF(F244L/K245R)"
+  )) 
+
+
+
+unique(data1$genotype)
+unique(data1$strain)
+
+data2 <- data1 |> 
+  mutate(genotype = as.factor(genotype)) |> 
+  add_count(genotype, incubation_time) |>
+  ungroup()
+
+data_master <- data2
+
+write_xlsx(data_master, "Data/data_master.xlsx")
+
+```
+
+## Traditional Statistics and transformations
+
+```{r}
+## firstly i will just calculate sd over all the different days, maybe later needs to be each individual day
+
+## how to normalize a sample and include standard deviations or SEM
+#Being B the control sample:
+#A*=(A-mean(A))*std(B)/std(A)+mean(B)
+
+
+eop_data <- data2 |> filter(incubation_time == 48) |> 
+  group_by(genotype) |>
+  mutate(
+    titeraverage = mean(titer),
+    stdev = sd(titer),
+    sem = stdev/n,
+    eop = titer/(3.64667e+11),
+    eopaverage = mean(eop), 
+    eopstdev = ((titer - titeraverage)*52.64266331)/(stdev+3.64667e+11)
+    
+  ) |>
+  ungroup()
+
+
+skim_eop_data <- eop_data |> group_by(genotype, incubation_time) |>
+  skim() |>
+  ungroup()
+
+write_xlsx(skim_eop_data, "Data/skim_eop_data.xlsx")
+
+
+```
+
+### Exploring the data
+
+```{r}
+
+introduce(data_master)
+plot_intro(data_master)
+plot_missing(data_master)
+plot_bar(data_master, by = "genotype")
+
+pca_df <- na.omit(data_master)
+pca_df <- drop_columns(pca_df, c(1))
+
+plot_prcomp(pca_df)
+plot_correlation(pca_df)
+
+plot_bar(skim_data, by = "genotype")
+```
+## Doing arithmetic for EOP values and to check differences of 18 vs 48 hour incubations.
+
+```{r}
+skim_data <- data_master |> group_by(genotype, incubation_time) |>
+  skim() |>
+  ungroup()
+
+write_xlsx(skim_data, "Data/skim_data.xlsx")
+
+
+
+plot_data <- skim_data |>
+  group_by(genotype, incubation_time) |>
+  filter(skim_type == "numeric") |>
+  mutate(sem = numeric.sd/(numeric.mean[skim_variable == "n"]), 
+         counting_error = sqrt(numeric.mean[skim_variable == "plaques"])) |>
+  ungroup() |>
+  group_by(skim_variable, genotype) |>
+  mutate(inceop = numeric.mean/numeric.mean[incubation_time == 48]) |>
+  ungroup() |>
+  group_by(skim_variable, incubation_time) |>
+  mutate(eop = numeric.mean/numeric.mean[genotype == "CpaF"]) |>
+  ungroup() |>
+  select(skim_variable:incubation_time | numeric.mean:numeric.sd | sem:eop)
+
+write_xlsx(plot_data, "Data/plot_data.xlsx")
+
+```
+
+
+
+## Plotting the EOP Data
+
+```{r}
+
+## how to normalize a sample and include standard deviations or SEM
+#Being B the control sample:
+#A*=(A-mean(A))*std(B)/std(A)+mean(B)
+
+eop_barplot <- plot_data |> filter(skim_variable == "titer") |>
+  ggplot(aes(x = genotype, y = eop, fill = incubation_time)) +
+  geom_bar(stat = "identity", position = position_dodge())
+
+eop_barplot
+
+titer_boxplot <- ggplot(data_master, aes(x = genotype, y = titer, fill = incubation_time)) +
+  geom_boxplot(outlier.size = 2, outlier.color = "black")+
+  geom_point(color = "grey", size = 2, alpha = 0.5, position = position_jitterdodge(jitter.width = 0.1, dodge.width = 0.7))
+
+titer_boxplot
+
+titer_barplot <- data3 |> 
+  #filter(genotype %in% c(CpaF)) |>
+  ggplot(aes(x = genotype, y = titeraverage)) +
+  geom_bar(stat = "identity", position = position_dodge())+
+  geom_errorbar(aes(ymin = titeraverage, ymax = titeraverage + stdev)) +
+  scale_y_continuous(name = "Plaque forming units", trans = "log10", na.value = 0, n.breaks = 6) +
+  coord_cartesian(ylim = c(1,1000000000000))
+  
+ 
+
+titer_barplot
+
+titer_barplot_subset <- data3 |> 
+  filter(genotype %in% c("CpaF", "CpaF(I355C)", "CpaF(D310N)", "CpaF(F244L/K245R)")) |>
+  ggplot(aes(x = genotype, y = titeraverage)) +
+  geom_bar(stat = "identity", position = position_dodge())+
+  geom_errorbar(aes(ymin = titeraverage, ymax = titeraverage + stdev)) +
+  scale_y_continuous(name = "Plaque forming units", trans = "log10", na.value = 0, n.breaks = 6) +
+  coord_cartesian(ylim = c(1,1000000000000))
+
+titer_barplot_subset
+
+```
+## Now lets look at the EOP values when only using the 48 hour incubations (less varibility based on barplots)
+
+
+### Calculating the standard deviations based on using all replicates (population stdev)
+
+```{r}
+## how to normalize a sample and include standard deviations or SEM
+#Being B the control sample:
+#A*=(A-mean(A))*std(B)/std(A)+mean(B)
+
+eop_datapoints <- data2 |> mutate(eop = titer/(3.64667e+11))
+
+eop_data1 <- data2 |>filter(incubation_time == 48, genotype == c("CpaF", "CpaF(I355C)", "CpaF(D310N)", "CpaF(F244L/K245R)")) |>
+  mutate(
+    eop = titer/(3.64667e+11)
+  )
+
+eop_data <- data2 |> filter(incubation_time == 48, genotype == c("CpaF", "CpaF(I355C)", "CpaF(D310N)", "CpaF(F244L/K245R)")) |> 
+  group_by(genotype) |>
+  mutate(
+    titeraverage = mean(titer),
+    stdev = sd(titer),
+    sem = stdev/n,
+    eop = titer/(3.64667e+11),
+    eopaverage = mean(eop), 
+    eopstdev = ((titer - titeraverage)*52.64266331)/(stdev+3.64667e+11)
+    
+  ) |>
+  ungroup()
+
+
+skim_eop_data <- eop_data |> group_by(genotype, incubation_time) |>
+  skim() |>
+  ungroup()
+
+
+eop_48_boxplot <- ggplot(eop_data, aes(x = genotype, y = eop)) +
+  geom_boxplot(aes(fill = genotype), outlier.size = 2, outlier.color = "grey50")
+
+eop_48_boxplot ## i am leaving off with this error
+
+eop_boxplot <- eop_48_boxplot + theme_pubr_MT() + scale_color_npg() + theme(plot.margin = unit(c(1, 1, 1, 1), "mm"))
+
+eop_boxplot_datapoints <- eop_boxplot + geom_point(data = )
+
+```
+
+
+
+```{r}
+
+
+
+# Example dataset with a factor variable called "CpaF_variant"
+df <- data.frame(
+  value = rnorm(9),
+  CpaF_variant = c("CpaF+", "CpaF+", "CpaF+", "delCpaF", "delCpaF", "delCpaF", "CpaF(I355C)", "CpaF(I355C)", "CpaF(I355C)")
+)
+
+# Subset the dataset to include only the "delCpaF" values
+df_delCpaF <- filter(df, CpaF_variant == "delCpaF")
+
+# Subset the dataset to include only the "CpaF+" and "CpaF(I355C)" values
+df_CpaF <- filter(df, CpaF_variant %in% c("CpaF+", "CpaF(I355C)"))
+
+
+
+
+```
