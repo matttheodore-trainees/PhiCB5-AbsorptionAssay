@@ -1,0 +1,271 @@
+---
+title: "python_data_analysis"
+author: "MT"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+
+##here is what you would run in terminal to setup an environment like the rstudio environment
+
+#conda create --name RStudio python=3.8
+#conda activate RStudio
+#conda install pandas matplotlib seaborn scipy statsmodels 
+#conda env create -f env_config.yml
+
+#install.packages("reticulate")
+
+
+####### Is this here
+
+
+# or for manual setup 
+
+# # Set Python path
+# use_python(config$python_path)
+# 
+# # Install Python packages (optional)
+# py_install(config$packages)
+# 
+# 
+# reticulate::py_install("pandas")
+# reticulate::py_install("matplotlib")
+# reticulate::py_install("seaborn")
+# reticulate::py_install("scipy")
+# reticulate::py_install("statsmodels")
+
+library(reticulate)
+library(pandoc)
+
+
+
+```
+
+### Overview 
+
+Data Loading and Preprocessing: Loaded the data from the Excel file, checked for missing values.
+
+Basic Summary Statistics: Calculated the mean, standard deviation, and standard error for each genotype and incubation time, grouped by date.
+
+Control Data Extraction: Separated the control data ('bNY30a_parent') and calculated its average, standard deviation, and standard error. This control data is essential for normalizing the other data points.
+
+Error Propagation: Calculated the normalized average and proceeded with error propagation to get the propagated standard deviation and standard error for each genotype. This was done considering the control data.
+
+Covariance and Correlated Errors: Introduced the concept of covariance to account for the relationship between the variable and control when they are not independent. This ensures a more accurate estimate of errors.
+
+```{r}
+
+date()
+Sys.time()
+getwd()
+list.files()
+.libPaths()
+.Library
+sessionInfo()
+search()
+searchpaths()
+R.version
+
+```
+
+```{r, include = FALSE}
+
+use_condaenv("RStudio")
+
+
+```
+
+
+
+
+
+
+```{python}
+# Importing required libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as stats
+import matplotlib as mpl
+
+```
+
+# Basic Summary Statistics and Analysis of Variation of the Data by Genotype
+
+### Summary Statistics
+
+```{python}
+
+
+
+# Load the dataset from 'data_complete.xlsx'
+file_path = 'Data/data_master.xlsx'
+data_master_new = pd.read_excel(file_path)
+
+# Calculate summary statistics
+summary_stats_new = data_master_new.groupby(['date', 'genotype']).agg(
+    avg_titer=pd.NamedAgg(column='titer', aggfunc=np.mean),
+    stdev_titer=pd.NamedAgg(column='titer', aggfunc=np.std),
+    n=pd.NamedAgg(column='titer', aggfunc='count')
+).reset_index()
+summary_stats_new['se_titer'] = summary_stats_new['stdev_titer'] / np.sqrt(summary_stats_new['n'])
+
+# Extract control data
+control_data_new = summary_stats_new[summary_stats_new['genotype'] == 'No Cell Control'].copy()
+control_data_new.rename(columns={'avg_titer': 'control_avg_titer', 'stdev_titer': 'control_stdev_titer', 'se_titer': 'control_se_titer'}, inplace=True)
+control_data_new.drop(columns=['genotype', 'n'], inplace=True)
+
+# Merge control data with original summary statistics data based on 'date'
+avg_data_with_controls_new = pd.merge(summary_stats_new, control_data_new, on='date')
+
+# Calculate normalized average
+avg_data_with_controls_new['normalized_avg'] = avg_data_with_controls_new['avg_titer'] / avg_data_with_controls_new['control_avg_titer']
+
+```
+
+### Error Propagation Methods
+Next, let's proceed with error propagation. We'll calculate the normalized average, standard deviation, and standard error for each genotype, considering the control (bNY30a_parent) data.
+
+For the first method, the propagation of error, we'll assume that errors in the variable and control are independent and will calculate the propagated standard deviation and error accordingly.
+
+```{python}
+
+# Error propagation for standard deviation
+avg_data_with_controls_new['normalized_stdev_propagation'] = avg_data_with_controls_new['normalized_avg'] * np.sqrt(
+    (avg_data_with_controls_new['stdev_titer'] / avg_data_with_controls_new['avg_titer']) ** 2 +
+    (avg_data_with_controls_new['control_stdev_titer'] / avg_data_with_controls_new['control_avg_titer']) ** 2
+)
+
+# Standard error based on propagated standard deviation
+avg_data_with_controls_new['normalized_se_propagation'] = avg_data_with_controls_new['normalized_stdev_propagation'] / np.sqrt(avg_data_with_controls_new['n'])
+
+
+```
+
+
+### Covariance and Correlated Errors
+The next step involves the introduction of covariance in the error propagation. The idea here is to take into account the relationship between the variable and control when they are not independent. This is an essential step in our analysis, as ignoring the covariance could lead to inaccuracies in error estimates.
+
+```{python}
+
+# Covariance calculation
+control_data_for_cov_new = data_master_new[data_master_new['genotype'] == 'No Cell Control'][['date', 'titer']]
+control_data_for_cov_new.rename(columns={'titer': 'control_titer'}, inplace=True)
+non_control_data_new = data_master_new[data_master_new['genotype'] != 'No Cell Control']
+merged_for_cov_new = pd.merge(non_control_data_new, control_data_for_cov_new, on='date')
+cov_data_new = merged_for_cov_new.groupby(['date', 'genotype']).apply(lambda x: np.cov(x['titer'], x['control_titer'])[0, 1]).reset_index(name='covariance')
+
+# Merge covariance data back to normalized_data
+avg_data_with_controls_new = pd.merge(avg_data_with_controls_new, cov_data_new, on=['date', 'genotype'], how='left')
+
+# Calculate propagated standard deviation and standard error considering covariance
+avg_data_with_controls_new['normalized_stdev_covariance'] = avg_data_with_controls_new['normalized_avg'] * np.sqrt(
+    (avg_data_with_controls_new['stdev_titer'] / avg_data_with_controls_new['avg_titer']) ** 2 +
+    (avg_data_with_controls_new['control_stdev_titer'] / avg_data_with_controls_new['control_avg_titer']) ** 2 -
+    2 * avg_data_with_controls_new['covariance'] / (avg_data_with_controls_new['avg_titer'] * avg_data_with_controls_new['control_avg_titer'])
+)
+
+# Calculate standard error based on propagated standard deviation with covariance
+avg_data_with_controls_new['normalized_se_covariance'] = avg_data_with_controls_new['normalized_stdev_covariance'] / np.sqrt(avg_data_with_controls_new['n'])
+
+
+
+```
+
+### Examining the differences in the stdev based on the error propogation methods
+
+Notice that the standard deviations calculated through error propagation and error propagation with covariance are the same for the available genotypes. This suggests that the covariance term did not significantly affect the error estimates in this specific dataset.
+
+
+# Interpretation of Error Propagation and Covariance Analysis
+
+The goal here was to understand the intrinsic noise in plaque-forming unit (PFU) assays across different genotypes and on different days (biological replicates). Typically, assays like PFU could have day to day variability from various forms of errors—technical, biological, and even day-to-day variations in environmental conditions we try to control for. If we do not account for these, our interpretation of the biological relevance could be skewed.
+
+For Error Propagation: After normalizing the PFU data by the control (bNY30a wt), I applied standard error propagation methods. This essentially adjusts the standard deviation and standard error of each genotype by accounting for the errors in both the genotype and the control.
+
+From the Covariance: Taking it a step further, I included a covariance term in the error calculation. This is crucial because the control and other genotypes are not strictly independent; they're measured under very similar conditions and often in parallel. The covariance term adjusts for this, giving us a more accurate measure of the true error.
+
+### Observations
+Reduced Variability: After applying these rigorous statistical methods, what we observe is a more "controlled" error bar in the plots. This suggests that some of the day-to-day variations and technical errors have indeed been mitigated.
+
+
+Significant Covariance: The covariance terms are not zero, confirming our initial assumption that the control and the variables are indeed not entirely independent. This validates the need for including covariance in our error model.
+
+Plotting: Both the normalized and non-normalized data give us a rich view of the dataset. The normalized data is especially useful for comparing the effect of mutations on PFU relative to the control.
+
+In summary, the error propagation and covariance adjustments provide us with a more robust and biologically relevant interpretation of the PFU assay data across genotypes and time points. This is crucial for downstream analyses and for drawing any high-confidence biological conclusions.
+
+
+```{python}
+
+# Filtering the data to include only the specified genotypes
+filtered_data = avg_data_with_controls_new[avg_data_with_controls_new['genotype'].isin(['bNY30a wt', 'pilAT36C'])]
+
+# Custom order for genotypes (only the ones of interest)
+order_filtered = ['bNY30a wt', 'pilAT36C']
+
+# Calculate p-values for the filtered dataset
+p_values_filtered = calculate_statistical_significance(filtered_data)
+
+
+
+# Create individual plots with p-value significance
+
+```
+
+```{python}
+# Define the custom theme
+my_theme = {
+    'font.family': 'Arial',
+    'axes.titlesize': 7,
+    'axes.titleweight': 'bold',
+    'axes.labelsize': 6,
+    'xtick.labelsize': 5,
+    'ytick.labelsize': 5,
+    'axes.grid': False,
+    'figure.figsize': (70 / 25.4, 200 / 25.4)  # Convert mm to inches
+}
+
+```
+
+
+```{python}
+# Create individual plots with p-value significance
+
+# Plot: Normalized averages and propagated standard deviations with covariance for filtered genotypes
+fig_filtered_new, ax_filtered_new = plt.subplots(figsize=(12, 8))
+sns.barplot(x='genotype', y='normalized_avg', data=filtered_data_new, ax=ax_filtered_new, order=ordered_genotypes_new, ci=None)
+ax_filtered_new.errorbar(x=np.arange(len(ordered_genotypes_new)), 
+                         y=filtered_data_new.groupby('genotype')['normalized_avg'].mean()[ordered_genotypes_new], 
+                         yerr=filtered_data_new.groupby('genotype')['normalized_stdev_covariance'].mean()[ordered_genotypes_new], 
+                         fmt='o', color='black', label='Propagated Std Dev with Covariance')
+sns.stripplot(x='genotype', y='normalized_avg', data=filtered_data_new, ax=ax_filtered_new, color='black', alpha=0.5, order=ordered_genotypes_new)
+ax_filtered_new.set_title('Normalized PFU (Plaque Forming Units) by Selected Genotypes (Error Propagation with Covariance)')
+ax_filtered_new.set_xlabel('Genotype')
+ax_filtered_new.set_ylabel('PFU (Plaque Forming Units)')
+
+# Function to add asterisks for p-value significance
+def add_asterisks(ax, p_values, y_max, order):
+    for i, (genotype, p) in enumerate(p_values):
+        significance = ''
+        if p < 0.05:
+            significance = '*'
+        if p < 0.01:
+            significance = '**'
+        if p < 0.001:
+            significance = '***'
+        ax.text(order.index(genotype), y_max, significance, ha='center')
+
+add_asterisks(ax_filtered_new, p_values_new, filtered_data_new['normalized_avg'].max() * 1.05, ordered_genotypes_new)
+plt.show()
+
+
+
+```
+
