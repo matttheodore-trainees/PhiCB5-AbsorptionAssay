@@ -27,7 +27,7 @@ output:
 # or for manual setup 
 
 # # Set Python path
-# use_python(config$python_path)
+#use_python(config$python_path)
 # 
 # # Install Python packages (optional)
 # py_install(config$packages)
@@ -91,8 +91,12 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import scipy.stats as stats
+import scipy.stats as f_oneway
 import matplotlib as mpl
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+from statsmodels.regression.mixed_linear_model import MixedLM
+
 
 ```
 
@@ -106,26 +110,26 @@ import matplotlib as mpl
 
 # Load the dataset from 'data_complete.xlsx'
 file_path = 'Data/data_master.xlsx'
-data_master_new = pd.read_excel(file_path)
+data_master = pd.read_excel(file_path)
 
 # Calculate summary statistics
-summary_stats_new = data_master_new.groupby(['date', 'genotype']).agg(
+summary_stats = data_master.groupby(['date', 'genotype']).agg(
     avg_titer=pd.NamedAgg(column='titer', aggfunc=np.mean),
     stdev_titer=pd.NamedAgg(column='titer', aggfunc=np.std),
     n=pd.NamedAgg(column='titer', aggfunc='count')
 ).reset_index()
-summary_stats_new['se_titer'] = summary_stats_new['stdev_titer'] / np.sqrt(summary_stats_new['n'])
+summary_stats['se_titer'] = summary_stats['stdev_titer'] / np.sqrt(summary_stats['n'])
 
 # Extract control data
-control_data_new = summary_stats_new[summary_stats_new['genotype'] == 'No Cell Control'].copy()
-control_data_new.rename(columns={'avg_titer': 'control_avg_titer', 'stdev_titer': 'control_stdev_titer', 'se_titer': 'control_se_titer'}, inplace=True)
-control_data_new.drop(columns=['genotype', 'n'], inplace=True)
+control_data = summary_stats[summary_stats['genotype'] == 'No Cell Control'].copy()
+control_data.rename(columns={'avg_titer': 'control_avg_titer', 'stdev_titer': 'control_stdev_titer', 'se_titer': 'control_se_titer'}, inplace=True)
+control_data.drop(columns=['genotype', 'n'], inplace=True)
 
 # Merge control data with original summary statistics data based on 'date'
-avg_data_with_controls_new = pd.merge(summary_stats_new, control_data_new, on='date')
+avg_data_with_controls = pd.merge(summary_stats, control_data, on='date')
 
 # Calculate normalized average
-avg_data_with_controls_new['normalized_avg'] = avg_data_with_controls_new['avg_titer'] / avg_data_with_controls_new['control_avg_titer']
+avg_data_with_controls['normalized_avg'] = avg_data_with_controls['avg_titer'] / avg_data_with_controls['control_avg_titer']
 
 ```
 
@@ -137,13 +141,13 @@ For the first method, the propagation of error, we'll assume that errors in the 
 ```{python}
 
 # Error propagation for standard deviation
-avg_data_with_controls_new['normalized_stdev_propagation'] = avg_data_with_controls_new['normalized_avg'] * np.sqrt(
-    (avg_data_with_controls_new['stdev_titer'] / avg_data_with_controls_new['avg_titer']) ** 2 +
-    (avg_data_with_controls_new['control_stdev_titer'] / avg_data_with_controls_new['control_avg_titer']) ** 2
+avg_data_with_controls['normalized_stdev_propagation'] = avg_data_with_controls['normalized_avg'] * np.sqrt(
+    (avg_data_with_controls['stdev_titer'] / avg_data_with_controls['avg_titer']) ** 2 +
+    (avg_data_with_controls['control_stdev_titer'] / avg_data_with_controls['control_avg_titer']) ** 2
 )
 
 # Standard error based on propagated standard deviation
-avg_data_with_controls_new['normalized_se_propagation'] = avg_data_with_controls_new['normalized_stdev_propagation'] / np.sqrt(avg_data_with_controls_new['n'])
+avg_data_with_controls['normalized_se_propagation'] = avg_data_with_controls['normalized_stdev_propagation'] / np.sqrt(avg_data_with_controls['n'])
 
 
 ```
@@ -155,24 +159,24 @@ The next step involves the introduction of covariance in the error propagation. 
 ```{python}
 
 # Covariance calculation
-control_data_for_cov_new = data_master_new[data_master_new['genotype'] == 'No Cell Control'][['date', 'titer']]
-control_data_for_cov_new.rename(columns={'titer': 'control_titer'}, inplace=True)
-non_control_data_new = data_master_new[data_master_new['genotype'] != 'No Cell Control']
-merged_for_cov_new = pd.merge(non_control_data_new, control_data_for_cov_new, on='date')
-cov_data_new = merged_for_cov_new.groupby(['date', 'genotype']).apply(lambda x: np.cov(x['titer'], x['control_titer'])[0, 1]).reset_index(name='covariance')
+control_data_for_cov = data_master[data_master['genotype'] == 'No Cell Control'][['date', 'titer']]
+control_data_for_cov.rename(columns={'titer': 'control_titer'}, inplace=True)
+non_control_data = data_master[data_master['genotype'] != 'No Cell Control']
+merged_for_cov = pd.merge(non_control_data, control_data_for_cov, on='date')
+cov_data = merged_for_cov.groupby(['date', 'genotype']).apply(lambda x: np.cov(x['titer'], x['control_titer'])[0, 1]).reset_index(name='covariance')
 
 # Merge covariance data back to normalized_data
-avg_data_with_controls_new = pd.merge(avg_data_with_controls_new, cov_data_new, on=['date', 'genotype'], how='left')
+avg_data_with_controls = pd.merge(avg_data_with_controls, cov_data, on=['date', 'genotype'], how='left')
 
 # Calculate propagated standard deviation and standard error considering covariance
-avg_data_with_controls_new['normalized_stdev_covariance'] = avg_data_with_controls_new['normalized_avg'] * np.sqrt(
-    (avg_data_with_controls_new['stdev_titer'] / avg_data_with_controls_new['avg_titer']) ** 2 +
-    (avg_data_with_controls_new['control_stdev_titer'] / avg_data_with_controls_new['control_avg_titer']) ** 2 -
-    2 * avg_data_with_controls_new['covariance'] / (avg_data_with_controls_new['avg_titer'] * avg_data_with_controls_new['control_avg_titer'])
+avg_data_with_controls['normalized_stdev_covariance'] = avg_data_with_controls['normalized_avg'] * np.sqrt(
+    (avg_data_with_controls['stdev_titer'] / avg_data_with_controls['avg_titer']) ** 2 +
+    (avg_data_with_controls['control_stdev_titer'] / avg_data_with_controls['control_avg_titer']) ** 2 -
+    2 * avg_data_with_controls['covariance'] / (avg_data_with_controls['avg_titer'] * avg_data_with_controls['control_avg_titer'])
 )
 
 # Calculate standard error based on propagated standard deviation with covariance
-avg_data_with_controls_new['normalized_se_covariance'] = avg_data_with_controls_new['normalized_stdev_covariance'] / np.sqrt(avg_data_with_controls_new['n'])
+avg_data_with_controls['normalized_se_covariance'] = avg_data_with_controls['normalized_stdev_covariance'] / np.sqrt(avg_data_with_controls['n'])
 
 
 
@@ -201,21 +205,79 @@ Plotting: Both the normalized and non-normalized data give us a rich view of the
 
 In summary, the error propagation and covariance adjustments provide us with a more robust and biologically relevant interpretation of the PFU assay data across genotypes and time points. This is crucial for downstream analyses and for drawing any high-confidence biological conclusions.
 
+Significance Testing
+
 
 ```{python}
 
-# Filtering the data to include only the specified genotypes
-filtered_data = avg_data_with_controls_new[avg_data_with_controls_new['genotype'].isin(['bNY30a wt', 'pilAT36C'])]
+# Performing one-way ANOVA
+anova_model = ols('normalized_avg ~ C(genotype)', data=avg_data_with_controls).fit()
+anova_table = sm.stats.anova_lm(anova_model, typ=2)
 
-# Custom order for genotypes (only the ones of interest)
-order_filtered = ['bNY30a wt', 'pilAT36C']
+# Performing mixed-effects model
+# In this case, the 'date' is considered as a random effect
+mixedlm_model = MixedLM.from_formula('normalized_avg ~ 1', groups='date', re_formula='1', data=avg_data_with_controls)
+mixedlm_result = mixedlm_model.fit()
 
-# Calculate p-values for the filtered dataset
-p_values_filtered = calculate_statistical_significance(filtered_data)
+anova_table, mixedlm_result.summary()
 
 
 
-# Create individual plots with p-value significance
+```
+
+```{python}
+
+# # Filtering the data to include only the specified genotypes
+# filtered_data = avg_data_with_controls[avg_data_with_controls['genotype'].isin(['bNY30a wt', 'pilAT36C'])]
+# 
+# # Custom order for genotypes (only the ones of interest)
+# order_filtered = ['bNY30a wt', 'pilAT36C']
+# 
+# # Calculate p-values for the filtered dataset
+# p_values_filtered = calculate_statistical_significance(filtered_data)
+# 
+# 
+# 
+# # Create individual plots with p-value significance
+
+# Calculate summary statistics
+summary_stats = data_master.groupby(['date', 'genotype']).agg(
+    avg_titer=('titer', np.mean),
+    stdev_titer=('titer', np.std),
+    n=('titer', 'count')
+).reset_index()
+summary_stats['se_titer'] = summary_stats['stdev_titer'] / np.sqrt(summary_stats['n'])
+
+# Extract control data
+control_data = summary_stats[summary_stats['genotype'] == 'No Cell Control'].copy()
+control_data.rename(columns={'avg_titer': 'control_avg_titer', 'stdev_titer': 'control_stdev_titer', 'se_titer': 'control_se_titer'}, inplace=True)
+control_data.drop(columns=['genotype', 'n'], inplace=True)
+
+# Merge control data with original summary statistics data based on 'date'
+avg_data_with_controls = pd.merge(summary_stats, control_data, on='date')
+
+# Calculate normalized average
+avg_data_with_controls['normalized_avg'] = avg_data_with_controls['avg_titer'] / avg_data_with_controls['control_avg_titer']
+
+# Error propagation for standard deviation
+avg_data_with_controls['normalized_stdev_propagation'] = avg_data_with_controls['normalized_avg'] * np.sqrt(
+    (avg_data_with_controls['stdev_titer'] / avg_data_with_controls['avg_titer']) ** 2 +
+    (avg_data_with_controls['control_stdev_titer'] / avg_data_with_controls['control_avg_titer']) ** 2
+)
+
+# Standard error based on propagated standard deviation
+avg_data_with_controls['normalized_se_propagation'] = avg_data_with_controls['normalized_stdev_propagation'] / np.sqrt(avg_data_with_controls['n'])
+
+# Performing one-way ANOVA
+anova_model = ols('normalized_avg ~ C(genotype)', data=avg_data_with_controls).fit()
+anova_table = sm.stats.anova_lm(anova_model, typ=2)
+
+# Performing mixed-effects model
+# In this case, the 'date' is considered as a random effect
+mixedlm_model = MixedLM.from_formula('normalized_avg ~ 1', groups='date', re_formula='1', data=avg_data_with_controls)
+mixedlm_result = mixedlm_model.fit()
+
+anova_tablemixedlm_result.summary()
 
 ```
 
@@ -239,16 +301,16 @@ my_theme = {
 # Create individual plots with p-value significance
 
 # Plot: Normalized averages and propagated standard deviations with covariance for filtered genotypes
-fig_filtered_new, ax_filtered_new = plt.subplots(figsize=(12, 8))
-sns.barplot(x='genotype', y='normalized_avg', data=filtered_data_new, ax=ax_filtered_new, order=ordered_genotypes_new, ci=None)
-ax_filtered_new.errorbar(x=np.arange(len(ordered_genotypes_new)), 
-                         y=filtered_data_new.groupby('genotype')['normalized_avg'].mean()[ordered_genotypes_new], 
-                         yerr=filtered_data_new.groupby('genotype')['normalized_stdev_covariance'].mean()[ordered_genotypes_new], 
+fig_filtered, ax_filtered = plt.subplots(figsize=(12, 8))
+sns.barplot(x='genotype', y='normalized_avg', data=filtered_data, ax=ax_filtered, order=ordered_genotypes, ci=None)
+ax_filtered.errorbar(x=np.arange(len(ordered_genotypes)), 
+                         y=filtered_data.groupby('genotype')['normalized_avg'].mean()[ordered_genotypes], 
+                         yerr=filtered_data.groupby('genotype')['normalized_stdev_covariance'].mean()[ordered_genotypes], 
                          fmt='o', color='black', label='Propagated Std Dev with Covariance')
-sns.stripplot(x='genotype', y='normalized_avg', data=filtered_data_new, ax=ax_filtered_new, color='black', alpha=0.5, order=ordered_genotypes_new)
-ax_filtered_new.set_title('Normalized PFU (Plaque Forming Units) by Selected Genotypes (Error Propagation with Covariance)')
-ax_filtered_new.set_xlabel('Genotype')
-ax_filtered_new.set_ylabel('PFU (Plaque Forming Units)')
+sns.stripplot(x='genotype', y='normalized_avg', data=filtered_data, ax=ax_filtered, color='black', alpha=0.5, order=ordered_genotypes)
+ax_filtered.set_title('Normalized PFU (Plaque Forming Units) by Selected Genotypes (Error Propagation with Covariance)')
+ax_filtered.set_xlabel('Genotype')
+ax_filtered.set_ylabel('PFU (Plaque Forming Units)')
 
 # Function to add asterisks for p-value significance
 def add_asterisks(ax, p_values, y_max, order):
@@ -262,8 +324,17 @@ def add_asterisks(ax, p_values, y_max, order):
             significance = '***'
         ax.text(order.index(genotype), y_max, significance, ha='center')
 
-add_asterisks(ax_filtered_new, p_values_new, filtered_data_new['normalized_avg'].max() * 1.05, ordered_genotypes_new)
+add_asterisks(ax_filtered, p_values, filtered_data['normalized_avg'].max() * 1.05, ordered_genotypes)
 plt.show()
+
+
+
+```
+
+
+```{r}
+
+py$average_data_with_controls
 
 
 

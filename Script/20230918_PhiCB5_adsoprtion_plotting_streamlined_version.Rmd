@@ -1,0 +1,174 @@
+---
+title: "Untitled"
+author: "MT"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+
+
+##here is what you would run in terminal to setup an environment like the rstudio environment
+
+#conda create --name RStudio python=3.8
+#conda activate RStudio
+#conda install pandas matplotlib seaborn scipy statsmodels 
+#conda env create -f env_config.yml
+
+#install.packages("reticulate")
+
+
+####### Is this here
+
+
+# or for manual setup 
+
+# # Set Python path
+#use_python(config$python_path)
+# 
+# # Install Python packages (optional)
+# py_install(config$packages)
+# 
+# 
+# reticulate::py_install("pandas")
+# reticulate::py_install("matplotlib")
+# reticulate::py_install("seaborn")
+# reticulate::py_install("scipy")
+# reticulate::py_install("statsmodels")
+
+library(reticulate)
+library(pandoc)
+
+
+
+```
+
+### Overview 
+
+Data Loading and Preprocessing: Loaded the data from the Excel file, checked for missing values.
+
+Basic Summary Statistics: Calculated the mean, standard deviation, and standard error for each genotype and incubation time, grouped by date.
+
+Control Data Extraction: Separated the control data ('bNY30a_parent') and calculated its average, standard deviation, and standard error. This control data is essential for normalizing the other data points.
+
+Error Propagation: Calculated the normalized average and proceeded with error propagation to get the propagated standard deviation and standard error for each genotype. This was done considering the control data.
+
+Covariance and Correlated Errors: Introduced the concept of covariance to account for the relationship between the variable and control when they are not independent. This ensures a more accurate estimate of errors.
+
+```{r}
+
+date()
+Sys.time()
+getwd()
+list.files()
+.libPaths()
+.Library
+sessionInfo()
+search()
+searchpaths()
+R.version
+
+```
+
+```{r, include = FALSE}
+
+use_condaenv("RStudio")
+
+
+```
+
+
+
+
+
+
+```{python}
+# Importing required libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as f_oneway
+import matplotlib as mpl
+import statsmodels.api as sm
+
+
+
+```
+
+```{python}
+# Load the dataset from 'data_complete.xlsx'
+file_path = 'Data/data_master.xlsx'
+data_master = pd.read_excel(file_path)
+
+
+
+
+```
+
+```{python}
+# Calculate summary statistics
+summary_stats = data_master.groupby(['date', 'genotype']).agg(
+    avg_titer=('titer', np.mean),
+    stdev_titer=('titer', np.std),
+    n=('titer', 'count')
+).reset_index()
+summary_stats['se_titer'] = summary_stats['stdev_titer'] / np.sqrt(summary_stats['n'])
+
+# Extract control data
+control_data = summary_stats[summary_stats['genotype'] == 'No Cell Control'].copy()
+control_data.rename(columns={'avg_titer': 'control_avg_titer', 'stdev_titer': 'control_stdev_titer', 'se_titer': 'control_se_titer'}, inplace=True)
+control_data.drop(columns=['genotype', 'n'], inplace=True)
+
+# Merge control data with original summary statistics data based on 'date'
+avg_data_with_controls = pd.merge(summary_stats, control_data, on='date')
+
+# Calculate normalized average
+avg_data_with_controls['normalized_avg'] = avg_data_with_controls['avg_titer'] / avg_data_with_controls['control_avg_titer']
+
+# Error propagation for standard deviation
+avg_data_with_controls['normalized_stdev_propagation'] = avg_data_with_controls['normalized_avg'] * np.sqrt(
+    (avg_data_with_controls['stdev_titer'] / avg_data_with_controls['avg_titer']) ** 2 +
+    (avg_data_with_controls['control_stdev_titer'] / avg_data_with_controls['control_avg_titer']) ** 2
+)
+
+# Standard error based on propagated standard deviation
+avg_data_with_controls['normalized_se_propagation'] = avg_data_with_controls['normalized_stdev_propagation'] / np.sqrt(avg_data_with_controls['n'])
+
+
+
+```
+
+
+
+```{python}
+
+# Importing required libraries for statistical analysis
+from statsmodels.formula.api import ols
+from statsmodels.stats.anova import anova_lm
+from statsmodels.regression.mixed_linear_model import MixedLM
+
+# Performing one-way ANOVA
+anova_model = ols('normalized_avg ~ C(genotype)', data=avg_data_with_controls).fit()
+anova_table = anova_lm(anova_model, typ=2)
+
+# Display the ANOVA table
+anova_table
+
+```
+
+```{python}
+
+try:
+    mixedlm_model = MixedLM.from_formula('normalized_avg ~ 1', groups='date', re_formula='1', data=avg_data_with_controls)
+    mixedlm_result = mixedlm_model.fit()
+    mixedlm_summary = mixedlm_result.summary()
+except Exception as e:
+    mixedlm_summary = str(e)
+
+mixedlm_summary
+
+
+
+```
