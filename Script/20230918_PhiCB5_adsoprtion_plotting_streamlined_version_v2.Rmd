@@ -26,11 +26,14 @@ We'll use Python for data manipulation, statistical testing, and plotting. The a
 #install.packages("reticulate")
 
 
-####### Is this here
+library(reticulate)
+library(pandoc)
 
 
 # or for manual setup 
-reticulate::use_condaenv( "C:\\Users\\Matthew\\anaconda3\\Scripts\\conda.exe")
+reticulate::use_condaenv("C:/Users/Matthew/anaconda3/envs/RStudio")
+
+
 
 
 # # Set Python path
@@ -46,8 +49,7 @@ reticulate::use_condaenv( "C:\\Users\\Matthew\\anaconda3\\Scripts\\conda.exe")
 # reticulate::py_install("scipy")
 # reticulate::py_install("statsmodels")
 
-library(reticulate)
-library(pandoc)
+
 
 
 
@@ -80,13 +82,6 @@ R.version
 
 ```
 
-```{r, include = FALSE}
-
-
-use_condaenv("RStudio")
-
-
-```
 
 
 ## Importing Required Libraries
