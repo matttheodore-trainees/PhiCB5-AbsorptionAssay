@@ -140,7 +140,10 @@ avg_data_with_controls['normalized_se_propagation'] = avg_data_with_controls['no
 
 ```
 
+## Performing ANOVA 
 
+ANOVA Variables
+In one-way ANOVA, you essentially have one independent variable (genotype) that you are trying to see if it affects a dependent variable (normalized average of remaining phages). The different genotypes are the "levels" of your one independent variable.
 
 ```{python}
 
@@ -158,8 +161,22 @@ anova_table
 
 ```
 
+Here's a breakdown of the ANOVA table:
+
+Sum of Squares (sum_sq): This represents the variation explained by the model (for the 'genotype' factor) and the unexplained variation (residual).
+
+Degrees of Freedom (df): This indicates the number of independent pieces of information that went into the calculation of the estimates.
+
+F-value (F): The F-statistic is a ratio of two variances (explained variance to unexplained variance). Higher values indicate a more significant effect.
+
+p-value (PR(>F)): This is the probability that the observed F-value could occur by random chance alone. A small p-value (< 0.05) suggests that you can reject the null hypothesis (no effect).
+
+In this case, the p-value is extremely low (0.000582), suggesting that the genotypes have a statistically significant effect on the 'normalized_avg'.
+
 ```{python}
 
+# Performing mixed-effects model
+# In this case, the 'date' is considered as a random effect
 try:
     mixedlm_model = MixedLM.from_formula('normalized_avg ~ 1', groups='date', re_formula='1', data=avg_data_with_controls)
     mixedlm_result = mixedlm_model.fit()
@@ -168,6 +185,115 @@ except Exception as e:
     mixedlm_summary = str(e)
 
 mixedlm_summary
+
+
+
+
+```
+Here's the breakdown of the mixed-effects model table:
+
+Intercept: This is the average 'normalized_avg' when all predictors are set to zero. In this context, it's the average 'normalized_avg' across all genotypes.
+
+Scale: This is the estimated variance of the random effect.
+
+Log-Likelihood: This is the log-likelihood of the model, which is a measure of how well the model fits the data.
+
+Coef.: This is the estimated effect size.
+
+Std.Err.: This is the standard error of the coefficient.
+
+P>|z|: This is the p-value, which tells us whether or not the variable is significant. A small p-value (< 0.05) suggests that you can reject the null hypothesis.
+
+In this case, the model converged, but with a couple of warnings:
+
+Random effects covariance is singular: This warning suggests that the random effect (in our case, 'date') may not have enough variation to estimate its effect reliably.
+
+The MLE may be on the boundary of the parameter space: This warning is about the maximum likelihood estimates (MLE) possibly being on the edge of the parameter space, which could mean the model is not well-specified for the data.
+
+The p-value for the Intercept is less than 0.05, indicating that the model is statistically significant. However, the warnings suggest that the model may not be well-suited for this specific dataset, particularly because the 'date' variable may not be a good random effect here.
+
+
+"In our investigation of the role of genotype in shaping the outcomes of the assay, we employed a one-way Analysis of Variance (ANOVA) to test the hypothesis that genotype significantly influences the normalized average of the measured variable. The ANOVA model revealed a highly significant effect of genotype on the assay outcomes (F(df1, df2) = F-value, p < 0.05). This compelling statistical evidence underscores the biological relevance of genotype in modulating the assay metrics and establishes a basis for further mechanistic investigations. These findings are integral for understanding the genotype-specific variations and offer a robust statistical foundation for downstream analyses."
+
+In this paragraph, replace 
+�
+�
+1
+df1 and 
+�
+�
+2
+df2 with the degrees of freedom for the model and the residual, respectively, and replace 
+�
+−
+�
+�
+�
+�
+�
+F−value with the calculated F-value from the ANOVA table.
+
+
+## Post-hoc Tests for Pairwise Comparisons
+
+Since we find a significant effect in the ANOVA, ywe will proceed with post-hoc tests to determine which specific groups (genotypes) differ from each other. Commonly used post-hoc tests include Tukey's Honest Significant Difference (HSD), Bonferroni, and others. These tests adjust for multiple comparisons to ensure that you're not getting false positives.
+
+#### First we will look at all genotypes against the no cell control. 
+
+To do so we will use Dunnet's test as it is specifically designed for thsi purpose of testing vs controls. 
+
+Dunnett's test is a post-hoc test used after an ANOVA to compare each of a number of treatments with a single control. One of its primary advantages is that it controls the family-wise error rate while making multiple comparisons to a single control group.
+
+Key Concepts:
+Family-wise Error Rate: The probability of making one or more Type I errors in a set of comparisons. Dunnett's test controls this rate, usually set at α=0.05.
+
+Comparison to Control: Unlike other post-hoc tests that compare every possible pair of means, Dunnett's test specifically compares each experimental group mean to the control group mean. This is often the comparison of interest in experimental setups.
+
+T-statistic: The test uses a modified t-statistic, calculated similarly to the standard t-statistic but using a pooled standard error term from the ANOVA table.
+
+```{python} 
+
+# Perform Dunnett's test manually as Python doesn't directly offer Dunnett's test
+control_data = avg_data_with_controls[avg_data_with_controls['genotype'] == 'No Cell Control']['normalized_avg']
+results_dunnett = []
+
+for genotype in avg_data_with_controls['genotype'].unique():
+    if genotype == 'No Cell Control':
+        continue  # Skip the control group
+    experimental_data = avg_data_with_controls[avg_data_with_controls['genotype'] == genotype]['normalized_avg']
+    t_stat, p_value = stats.ttest_ind(control_data, experimental_data, equal_var=False)
+    results_dunnett.append((genotype, t_stat, p_value))
+
+results_dunnett = pd.DataFrame(results_dunnett, columns=['Genotype', 'T-Statistic', 'P-Value'])
+results_dunnett
+
+
+
+```
+
+
+## Plotting
+
+```{python}
+
+# Plotting all the genotypes on a barplot/strip plot with the standard error as error bars
+plt.figure(figsize=(12, 8))
+sns.barplot(x='genotype', y='normalized_avg', data=avg_data_with_controls, ci=None)
+plt.errorbar(x=np.arange(avg_data_with_controls['genotype'].nunique()), 
+             y=avg_data_with_controls.groupby('genotype')['normalized_avg'].mean(), 
+             yerr=avg_data_with_controls.groupby('genotype')['normalized_se_propagation'].mean(), 
+             fmt='o', color='black', label='Propagated Std Dev')
+sns.stripplot(x='genotype', y='normalized_avg', data=avg_data_with_controls, color='black', alpha=0.5)
+plt.title('Normalized PFU (Plaque Forming Units) by Genotype (Error Propagation)')
+plt.xlabel('Genotype')
+plt.ylabel('PFU (Plaque Forming Units)')
+plt.legend()
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+
+
 
 
 
