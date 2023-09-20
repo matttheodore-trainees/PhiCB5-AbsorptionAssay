@@ -96,7 +96,7 @@ from statsmodels.stats.anova import anova_lm
 from statsmodels.stats.multicomp import MultiComparison
 ```
 
-## Overview of Normalization  Strategy 
+# Overview of Normalization and statistics Strategy 
 
 #### Normalizing using Individual Observations 
 
@@ -107,8 +107,7 @@ In this approach, each titer value is normalized by the corresponding "No Cell C
 
 #### Normalizing Using Weighted Statistical Methods 
 
-If you want to use the average of the technical replicates, you could weight your statistical tests by the inverse of the standard error squared. This would give more weight to averages that are based on a larger number of replicates and are thus more reliable. However, the
-n would still be the number of biological replicates, reducing the statistical power.
+If you want to use the average of the technical replicates, you could weight your statistical tests by the inverse of the standard error squared. This would give more weight to averages that are based on a larger number of replicates and are thus more reliable. However, the n would still be the number of biological replicates, reducing the statistical power but it would preserve any standard error of propogation for individual dates. 
 
 In this approach, we first calculate the average titer and standard error for each genotype on each date. We then normalize these averages by the corresponding average "No Cell Control" value for the same date. This method uses averages and considers the number of biological replicates for each genotype.
 
@@ -120,7 +119,8 @@ file_path = 'Data/data_master.xlsx'
 data_master = pd.read_excel(file_path)
 ```
 
-#### Data Normalization
+
+# Data Normalization and analysis using Individual Observations
 
 ```{python}
 # Calculate the average "No Cell Control" titer for each date
@@ -245,3 +245,6 @@ plt.show()
 
 1. **ANOVA Results**: The F-statistic is approximately 25.28 and the p-value is \(1.09 	imes 10^{-18}\). This strongly suggests that genotype has a significant effect on the normalized titer.
 2. **Tukey's Test**: The Tukey's HSD test also indicates significant differences between genotypes.
+
+
+# Normalization Using Weighted Statistical Methods 
