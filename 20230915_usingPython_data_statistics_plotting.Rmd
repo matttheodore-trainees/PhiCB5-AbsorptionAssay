@@ -75,7 +75,7 @@ R.version
 
 ```{r, include = FALSE}
 
-use_condaenv("RStudio")
+reticulate::use_condaenv("C:/Users/Matthew/anaconda3/envs/RStudio")
 
 
 ```
