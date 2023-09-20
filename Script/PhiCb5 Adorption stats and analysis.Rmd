@@ -1,0 +1,247 @@
+---
+title: "PhiCb5 Adsorption"
+author: "MT"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+We'll use Python for data manipulation, statistical testing, and plotting. The analysis includes:
+
+- Data Import
+- Data Normalization
+- Summary Statistics
+- ANOVA and Tukey's Test (pairwise comparisons)
+- Plotting
+
+```{r setup, include=FALSE}
+
+
+##here is what you would run in terminal to setup an environment like the rstudio environment
+
+#conda create --name RStudio python=3.8
+#conda activate RStudio
+#conda install pandas matplotlib seaborn scipy statsmodels 
+#conda env create -f env_config.yml
+
+#install.packages("reticulate")
+
+
+library(reticulate)
+library(pandoc)
+
+
+# or for manual setup 
+reticulate::use_condaenv("C:/Users/MicrobeJ/anaconda3/envs/RStudio")
+
+
+
+
+# # Set Python path
+#use_python(config$python_path)
+# 
+# # Install Python packages (optional)
+# py_install(config$packages)
+# 
+# 
+# reticulate::py_install("pandas")
+# reticulate::py_install("matplotlib")
+# reticulate::py_install("seaborn")
+# reticulate::py_install("scipy")
+# reticulate::py_install("statsmodels")
+
+
+
+
+
+```
+
+### Overview 
+
+Data Loading and Preprocessing: Loaded the data from the Excel file, checked for missing values.
+
+Basic Summary Statistics: Calculated the mean, standard deviation, and standard error for each genotype and incubation time, grouped by date.
+
+Control Data Extraction: Separated the control data ('bNY30a_parent') and calculated its average, standard deviation, and standard error. This control data is essential for normalizing the other data points.
+
+Error Propagation: Calculated the normalized average and proceeded with error propagation to get the propagated standard deviation and standard error for each genotype. This was done considering the control data.
+
+Covariance and Correlated Errors: Introduced the concept of covariance to account for the relationship between the variable and control when they are not independent. This ensures a more accurate estimate of errors.
+
+```{r}
+
+date()
+Sys.time()
+getwd()
+list.files()
+.libPaths()
+.Library
+sessionInfo()
+search()
+searchpaths()
+R.version
+
+```
+
+#### Importing Python Libraries
+
+```{python}
+# Importing required libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import f_oneway
+from statsmodels.formula.api import ols
+from statsmodels.stats.anova import anova_lm
+from statsmodels.stats.multicomp import MultiComparison
+```
+
+## Overview of Normalization  Strategy 
+
+#### Normalizing using Individual Observations 
+
+You could normalize each individual titer value (both biological and technical replicates) by dividing it by the corresponding "No Cell Control" for the same date. Then, you can use these normalized values for statistical tests. The 
+n (number of observations) in this case would be the total number of observations (biological replicates x technical replicates).
+
+In this approach, each titer value is normalized by the corresponding "No Cell Control" value for the same date. This method uses all the available data points, treating them as independent observations.
+
+#### Normalizing Using Weighted Statistical Methods 
+
+If you want to use the average of the technical replicates, you could weight your statistical tests by the inverse of the standard error squared. This would give more weight to averages that are based on a larger number of replicates and are thus more reliable. However, the
+n would still be the number of biological replicates, reducing the statistical power.
+
+In this approach, we first calculate the average titer and standard error for each genotype on each date. We then normalize these averages by the corresponding average "No Cell Control" value for the same date. This method uses averages and considers the number of biological replicates for each genotype.
+
+#### Data Import
+
+```{python}
+# Load the dataset
+file_path = 'Data/data_master.xlsx'
+data_master = pd.read_excel(file_path)
+```
+
+#### Data Normalization
+
+```{python}
+# Calculate the average "No Cell Control" titer for each date
+avg_control_titer = data_master[data_master['genotype'] == 'No Cell Control'].groupby('date')['titer'].mean().reset_index()
+avg_control_titer.columns = ['date', 'avg_titer_control']
+
+# Merge the average "No Cell Control" data with the main data to normalize
+merged_data = pd.merge(data_master, avg_control_titer, on='date')
+merged_data['normalized_titer'] = merged_data_corrected['titer'] / merged_data['avg_titer_control']
+
+```
+
+## Summary Statistics
+
+```{python}
+# Calculate summary statistics
+summary_stats = data_master.groupby(['date', 'genotype']).agg(
+    avg_titer=('titer', np.mean),
+    stdev_titer=('titer', np.std),
+    n=('titer', 'count')
+).reset_index()
+summary_stats['se_titer'] = summary_stats['stdev_titer'] / np.sqrt(summary_stats['n'])
+```
+
+## Performing ANOVA
+
+ANOVA Variables
+In one-way ANOVA, you essentially have one independent variable (genotype) that you are trying to see if it affects a dependent variable (normalized average of remaining phages). The different genotypes are the "levels" of your one independent variable.
+
+Here's a breakdown of the ANOVA table:
+
+Sum of Squares (sum_sq): This represents the variation explained by the model (for the 'genotype' factor) and the unexplained variation (residual).
+
+Degrees of Freedom (df): This indicates the number of independent pieces of information that went into the calculation of the estimates.
+
+F-value (F): The F-statistic is a ratio of two variances (explained variance to unexplained variance). Higher values indicate a more significant effect.
+
+p-value (PR(>F)): This is the probability that the observed F-value could occur by random chance alone. A small p-value (< 0.05) suggests that you can reject the null hypothesis (no effect).
+
+
+```{python}
+# Performing one-way ANOVA
+anova_model = ols('normalized_titer ~ C(genotype)', data=merged_data).fit()
+anova_table = anova_lm(anova_model, typ=2)
+```
+
+#### Discussion of ANOVA Output:
+  
+  Both approaches yield significant results, implying that the choice of normalization method does not drastically change the overall conclusion that genotype affects phage adsorption. However, the method using individual observations yields a slightly lower p-value, possibly because it utilizes more data points, thereby increasing statistical power.
+  
+  
+In our investigation of the role of genotype in shaping the outcomes of the assay, we employed a one-way Analysis of Variance (ANOVA) to test the hypothesis that genotype significantly influences the normalized average of the measured variable. The ANOVA model revealed a highly significant effect of genotype on the assay outcomes (F(df1, df2) = F-value, p < 0.05). This compelling statistical evidence underscores the biological relevance of genotype in modulating the assay metrics and establishes a basis for further mechanistic investigations. These findings are integral for understanding the genotype-specific variations and offer a robust statistical foundation for downstream analyses.
+
+## Post-hoc Tests for Pairwise Comparisons
+
+Since we find a significant effect in the ANOVA, we will proceed with post-hoc tests to determine which specific groups (genotypes) differ from each other. Commonly used post-hoc tests include Tukey's Honest Significant Difference (HSD), Bonferroni, and others. These tests adjust for multiple comparisons to ensure that you're not getting false positives.
+
+### Post-hoc Strategy
+
+#### First we will look at all genotypes against the no cell control 
+
+To do so we will use Dunnet's test as it is specifically designed to compare each of a number of treatments with a single control. One of its primary advantages is that it controls the family-wise error rate while making multiple comparisons to a single control group.
+
+**Key Concepts**:
+Family-wise Error Rate: The probability of making one or more Type I errors in a set of comparisons. Dunnett's test controls this rate, usually set at α=0.05.
+
+Comparison to Control: Unlike other post-hoc tests that compare every possible pair of means, Dunnett's test specifically compares each experimental group mean to the control group mean. This is often the comparison of interest in experimental setups.
+
+**T-statistic**: The test uses a modified t-statistic, calculated similarly to the standard t-statistic but using a pooled standard error term from the ANOVA table.
+  
+#### Dunnets test/ Tukeys test function loop
+
+The standard approach is to perform a series of t-tests comparing each treatment group against the control group. We then adjust the p-values to account for multiple comparisons. R may have a dunnets test function, but I couldn't find one here for python.
+
+
+```{python}
+# Running Tukey's test
+mc = MultiComparison(merged_data['normalized_titer'], merged_data['genotype'])
+result = mc.tukeyhsd(alpha=0.05)
+tukey_result_df = pd.DataFrame(result._results_table.data[1:], columns=result._results_table.data[0])
+
+# Convert the result of Tukey's test to a DataFrame for better visualization and display
+tukey_result_df
+
+```
+
+### Summary & Discussion on Tukey's HSD Post-hoc Analysis Results
+
+
+#### Comparisons Against the Control ('No Cell Control')
+- **NA1000 vs No Cell Control**: \( p = 0.7778 \), Not significant
+- **NA1000 ▲pilA vs No Cell Control**: \( p = 0.9000 \), Not significant
+- **bNY30a vs No Cell Control**: \( p = 0.0010 \), Significant
+- **pilAT36C vs No Cell Control**: \( p = 0.0010 \), Significant
+
+#### Pairwise Comparisons and Their Significance:
+
+1. **NA1000 vs NA1000 ▲pilA**: The mean difference is 0.0437, and the test is not significant (\(p = 0.9000\)). This suggests that the absence or presence of the pilA gene does not have a statistically significant impact on the normalized titer in the context of the NA1000 background. It implies that the pilA deletion may not be a major contributing factor to phage adsorption in this genotype, based on the current dataset.
+
+2. **bNY30a vs pilAT36C**: The mean difference is -0.1418 and the test is not significant (\(p = 0.5239\)). This would suggest that the two genotypes do not significantly differ in normalized titer based on the current dataset. 
+
+From this analysis, the genotypes bNY30a and pilAT36C show significant differences when compared to the control and to the NA1000 and NA1000 ▲pilA genotypes. Interestingly, the p value for the two genotypes , bNY30a and pilAT36C,  do not show significant differences between themselves. This would suggest that their mechanisms affecting the previously reported EOP (plaque forming) may be similar or their effects are comparable in magnitude. Further mechanistic studies are needed to elucidate the underlying biology of these observations.
+
+
+
+
+## Plotting
+
+```{python}
+# Create a combined barplot and stripplot with jittering enabled
+sns.set(style="whitegrid")
+plt.figure(figsize=(12, 8))
+sns.barplot(x='genotype', y='normalized_titer', data=merged_data, ci='sd', capsize=.2, palette='muted')
+sns.stripplot(x='genotype', y='normalized_titer', data=merged_data, color='black', jitter=True, dodge=True)
+plt.title('Normalized Titers by Genotype')
+plt.ylabel('Normalized Titer')
+plt.xlabel('Genotype')
+plt.show()
+```
+
+## Observations
+
+1. **ANOVA Results**: The F-statistic is approximately 25.28 and the p-value is \(1.09 	imes 10^{-18}\). This strongly suggests that genotype has a significant effect on the normalized titer.
+2. **Tukey's Test**: The Tukey's HSD test also indicates significant differences between genotypes.
