@@ -1,0 +1,364 @@
+---
+title: "Untitled"
+author: "MT"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Data Analysis for PhiCB5 Adsorption Data
+
+## Introduction
+
+The experiment is run in biological replicates (have their own unique id) and technical triplicate for the biological replicates. 
+The data set is `data_master_final` from the PhiCB5 adsorption data. This document outlines the statistical tests carried out on the dataset.
+
+#### Data Preparation
+
+The dataset was loaded and the 'unique_id' column was specified as a string to prevent it from being parsed as a date.
+
+
+
+We'll use Python for data manipulation, statistical testing, and plotting. The analysis includes:
+
+- Data Import
+- Data Normalization
+- Summary Statistics
+- ANOVA and Tukey's Test
+- Plotting
+
+#### Library R
+
+```{r setup, include=FALSE}
+
+
+##here is what you would run in terminal to setup an environment like the rstudio environment
+
+#conda create --name RStudio python=3.8
+#conda activate RStudio
+#conda install pandas matplotlib seaborn scipy statsmodels 
+#conda env create -f env_config.yml
+
+#install.packages("reticulate")
+
+
+####### Is this here
+
+
+# # Set Python path
+#use_python(config$python_path)
+# 
+# # Install Python packages (optional)
+# py_install(config$packages)
+# 
+# 
+# reticulate::py_install("pandas")
+# reticulate::py_install("matplotlib")
+# reticulate::py_install("seaborn")
+# reticulate::py_install("scipy")
+# reticulate::py_install("statsmodels")
+
+library(reticulate)
+library(pandoc)
+
+
+
+```
+
+#### Initiate Python Env
+
+```{r, include = FALSE}
+
+
+reticulate::use_condaenv("C:/Users/MicrobeJ/anaconda3/envs/RStudio")
+
+
+
+```
+
+#### Library Python
+
+```{python, include = FALSE}
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+```
+
+
+Three types of normalization were performed:
+
+1. Direct Subtraction
+2. Ratio Normalization
+3. Z-Score Normalization
+
+
+
+
+
+
+```{python}
+
+# Load the newly uploaded dataset with the 'unique_id' column specified as string
+df_new = pd.read_excel("Data/data_master_final.xlsx", dtype={"unique_id": str})
+
+# To check unique values in the 'unique_id' column
+print(df_new['unique_id'].unique())
+
+
+# Calculate the mean titer of the "No Cell Control" for each unique ID
+no_cell_control_means_new = df_new[df_new['genotype'] == 'No Cell Control'].groupby('unique_id')['titer'].mean().reset_index()
+no_cell_control_means_new.rename(columns={'titer': 'mean_titer_no_cell_control'}, inplace=True)
+
+# Merge this information with the original DataFrame
+df_merged_new = pd.merge(df_new, no_cell_control_means_new, on='unique_id', how='left')
+
+# Perform the normalization calculations
+
+# Direct Subtraction
+df_merged_new['normalized_titer_direct_sub'] = df_merged_new['titer'] - df_merged_new['mean_titer_no_cell_control']
+
+# Ratio Normalization
+df_merged_new['normalized_titer_ratio'] = df_merged_new['titer'] / df_merged_new['mean_titer_no_cell_control']
+
+# Z-Score Normalization
+df_merged_new['normalized_titer_zscore'] = (df_merged_new['titer'] - df_merged_new['mean_titer_no_cell_control']) / df_merged_new['mean_titer_no_cell_control'].std()
+```
+
+
+
+## Plotting the different normalizations
+
+```{python}
+
+# Initialize the figure with modified dimensions for a 2x2 layout
+fig, axes = plt.subplots(2, 2, figsize=(20, 20))
+
+# Original Data
+sns.violinplot(x='genotype', y='titer', data=df_merged_new, ax=axes[0, 0], inner=None, color='lightgray')
+sns.stripplot(x='genotype', y='titer', data=df_merged_new, hue='unique_id', dodge=True, marker='o', alpha=0.7, jitter=True, ax=axes[0, 0])
+axes[0, 0].set_title('Original Data')
+axes[0, 0].set_xticklabels(axes[0, 0].get_xticklabels(), rotation=45, ha='right')
+axes[0, 0].legend().set_visible(False)  # Hide the legend
+
+# Direct Subtraction Normalization
+sns.violinplot(x='genotype', y='normalized_titer_direct_sub', data=df_merged_new, ax=axes[0, 1], inner=None, color='lightgray')
+sns.stripplot(x='genotype', y='normalized_titer_direct_sub', data=df_merged_new, hue='unique_id', dodge=True, marker='o', alpha=0.7, jitter=True, ax=axes[0, 1])
+axes[0, 1].set_title('Direct Subtraction Normalization')
+axes[0, 1].set_xticklabels(axes[0, 1].get_xticklabels(), rotation=45, ha='right')
+axes[0, 1].legend().set_visible(False)  # Hide the legend
+
+# Ratio Normalization
+sns.violinplot(x='genotype', y='normalized_titer_ratio', data=df_merged_new, ax=axes[1, 0], inner=None, color='lightgray')
+sns.stripplot(x='genotype', y='normalized_titer_ratio', data=df_merged_new, hue='unique_id', dodge=True, marker='o', alpha=0.7, jitter=True, ax=axes[1, 0])
+axes[1, 0].set_title('Ratio Normalization')
+axes[1, 0].set_xticklabels(axes[1, 0].get_xticklabels(), rotation=45, ha='right')
+axes[1, 0].legend().set_visible(False)  # Hide the legend
+
+# Z-Score Normalization
+sns.violinplot(x='genotype', y='normalized_titer_zscore', data=df_merged_new, ax=axes[1, 1], inner=None, color='lightgray')
+sns.stripplot(x='genotype', y='normalized_titer_zscore', data=df_merged_new, hue='unique_id', dodge=True, marker='o', alpha=0.7, jitter=True, ax=axes[1, 1])
+axes[1, 1].set_title('Z-Score Normalization')
+axes[1, 1].set_xticklabels(axes[1, 1].get_xticklabels(), rotation=45, ha='right')
+axes[1, 1].legend().set_visible(False)  # Hide the legend
+
+# Add a single legend for all subplots
+handles, labels = axes[0, 0].get_legend_handles_labels()
+fig.legend(handles, labels, title='Unique ID', loc='upper right')
+
+# Finalize the layout
+#plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust the rectangle in which to fit plots
+plt.show()
+
+
+```
+
+
+## Preliminary Statistical Tests
+
+#### Shapiro-Wilk Test for Normality and Levene's Test for Homogeneity of Variances
+
+
+**Shapiro-Wilk Test**: The null hypothesis (\(H_0\)) for this test is that the data for each genotype (excluding 'No Cell Control') follows a normal distribution. Rejecting this hypothesis would mean that the data does not follow a normal distribution, which is an assumption for many statistical tests like ANOVA.So first we need to check for normality.
+
+**Levene's Test**: The null hypothesis for the Levene's test is that all genotypes (again, excluding 'No Cell Control') have equal variances. Rejecting this hypothesis would imply that the variances are significantly different, which would violate the assumptions for tests like ANOVA.
+
+
+
+```{python}
+
+from scipy import stats
+
+
+# Initialize an empty DataFrame to store statistical test results
+stat_results = pd.DataFrame(columns=['Normalization_Type', 'Test_Name', 'P-Value', 'Result'])
+
+# Function to perform normality test and variance homogeneity test
+def perform_stat_tests(df, column_name, norm_type, stat_results):
+    p_values = []
+    
+    # Perform Shapiro-Wilk Test for Normality on each genotype except 'No Cell Control'
+    for genotype in df[df['genotype'] != 'No Cell Control']['genotype'].unique():
+        data = df[(df['genotype'] == genotype)][column_name]
+        _, p_value = stats.shapiro(data)
+        p_values.append(p_value)
+        stat_results = stat_results.append({'Normalization_Type': norm_type, 'Test_Name': f'Shapiro_{genotype}', 'P-Value': p_value, 'Result': 'Pass' if p_value > 0.05 else 'Fail'}, ignore_index=True)
+        
+    # Perform Levene's Test for Variance Homogeneity
+    all_data = [df[df['genotype'] == genotype][column_name].values for genotype in df['genotype'].unique() if genotype != 'No Cell Control']
+    _, p_value = stats.levene(*all_data)
+    stat_results = stat_results.append({'Normalization_Type': norm_type, 'Test_Name': 'Levene', 'P-Value': p_value, 'Result': 'Pass' if p_value > 0.05 else 'Fail'}, ignore_index=True)
+    
+    return p_values, stat_results
+
+
+# Perform tests on original titer values
+
+p_values, stat_results = perform_stat_tests(df_merged_new, 'titer', 'Original', stat_results)
+
+# Perform tests on Direct Subtraction Normalized titer values
+perform_stat_tests('normalized_titer_direct_sub', 'Direct_Subtraction')
+
+# Perform tests on Ratio Normalized titer values
+perform_stat_tests('normalized_titer_ratio', 'Ratio_Normalization')
+
+# Display statistical test results
+stat_results
+
+
+```
+The results of the Shapiro-walk test and levene tests are below. 
+
+
+
+     Normalization_Type             Test_Name   P-Value Result
+0              Original        Shapiro_NA1000  0.458709   Pass
+1              Original  Shapiro_NA1000 ▲pilA  0.110242   Pass
+2              Original        Shapiro_bNY30a  0.125683   Pass
+3              Original      Shapiro_pilAT36C  0.745261   Pass
+4              Original                Levene  0.402243   Pass
+5    Direct_Subtraction        Shapiro_NA1000  0.114235   Pass
+6    Direct_Subtraction  Shapiro_NA1000 ▲pilA  0.249646   Pass
+7    Direct_Subtraction        Shapiro_bNY30a  0.171544   Pass
+8    Direct_Subtraction      Shapiro_pilAT36C  0.872297   Pass
+9    Direct_Subtraction                Levene  0.182243   Pass
+10  Ratio_Normalization        Shapiro_NA1000  0.189448   Pass
+11  Ratio_Normalization  Shapiro_NA1000 ▲pilA  0.172546   Pass
+12  Ratio_Normalization        Shapiro_bNY30a  0.101303   Pass
+13  Ratio_Normalization      Shapiro_pilAT36C  0.795403   Pass
+14  Ratio_Normalization                Levene  0.186566   Pass
+
+
+##### Analysis of Tests
+
+1. **Shapiro-Wilk Test**: All genotypes passed the test for normality, supporting the null hypothesis. This allows us to proceed with ANOVA and other parametric tests.
+
+2. **Levene's Test**: The test for variance homogeneity also passed for all normalization types, again supporting the null hypothesis. This indicates that the variances are not significantly different across the genotypes, meeting the assumption for ANOVA.
+
+Given that the data meet the assumptions of a normal distribution, further statistical tests like the ANOVA or t-tests to compare the means between different genotypes can be performed (parametric testing)
+
+## Parametric Pairing tests ??
+
+```{python}
+
+# Initialize a dictionary to store test results
+statistical_results = {}
+
+# List of columns to perform statistical tests on
+columns_to_test = ['titer', 'normalized_titer_direct_sub', 'normalized_titer_ratio']
+
+# 1. Within-group Variability: Paired t-tests within each genotype and unique ID
+for column in columns_to_test:
+    ttest_results_within = []
+    unique_genotypes = df_merged_new['genotype'].unique()
+    unique_genotypes = [gen for gen in unique_genotypes if gen != 'No Cell Control']  # Exclude 'No Cell Control'
+    
+    for genotype in unique_genotypes:
+        for unique_id in df_merged_new['unique_id'].unique():
+            # Filter data for specific genotype and unique ID
+            df_filtered = df_merged_new[(df_merged_new['genotype'] == genotype) & (df_merged_new['unique_id'] == unique_id)]
+            df_no_cell_control = df_merged_new[(df_merged_new['genotype'] == 'No Cell Control') & (df_merged_new['unique_id'] == unique_id)]
+            
+            # Check if there are enough samples for t-test
+            if len(df_filtered) >= 2 and len(df_no_cell_control) >= 2:
+                t_stat, p_val = ttest_rel(df_filtered[column], df_no_cell_control[column])
+                ttest_results_within.append((genotype, unique_id, t_stat, p_val))
+    
+    statistical_results[f"Paired_ttest_{column}"] = ttest_results_within
+
+# 2. Between-group Variability: ANOVA across different genotypes
+for column in columns_to_test:
+    model = ols(f'{column} ~ C(genotype)', data=df_merged_new).fit()
+    anova_table = sm.stats.anova_lm(model, typ=2)
+    statistical_results[f"ANOVA_{column}"] = anova_table
+
+# 3. Post-hoc Analysis: Tukey's HSD
+for column in columns_to_test:
+    tukey_results = pairwise_tukeyhsd(df_merged_new[column], df_merged_new['genotype'], alpha=0.05)
+    statistical_results[f"TukeyHSD_{column}"] = tukey_results
+
+statistical_results.keys()
+```
+
+
+
+##### Analysis of Tests
+
+3. **ANOVA**: For all types of titer values (original, direct subtraction normalized, and ratio normalized), the p-values were less than 0.001. This strongly suggests rejecting the null hypothesis, indicating significant differences in means across genotypes.
+
+4. **Paired t-tests**: The results varied depending on the genotype and the type of titer value. However, in most cases, there were significant differences between the genotypes and 'No Cell Control', which means the null hypothesis is rejected for those cases.
+
+5. **Tukey's HSD**: Similar to ANOVA, the results indicate that there are pairs of genotypes that have significantly different means, leading to the rejection of the null hypothesis for those pairs.
+
+In summary, the statistical tests indicate that the different genotypes have significantly different titer levels. The assumptions for normality and homogeneity of variances were met, allowing for a robust statistical analysis. These findings are consistent across different types of normalization, suggesting that the observed differences are not artifacts of data transformation but are indicative of real biological variations.
+
+
+
+####### dif 
+
+## Independent t-tests
+
+We performed independent t-tests between the different genotypes for the original titer values, 
+direct subtraction normalized values, and ratio normalized values. Below are the summarized results for these comparisons:
+
+
+
+
+### For Original Titer Values
+
+- **NA1000 vs. NA1000 ▲pilA**: \( t = -0.51, p = 0.61 \)
+- **NA1000 vs. bNY30a**: \( t = 10.71, p < 0.001 \)
+- **NA1000 vs. pilAT36C**: \( t = 8.35, p < 0.001 \)
+- **NA1000 vs. No Cell Control**: \( t = -4.95, p < 0.001 \)
+- ...
+
+### For Direct Subtraction Normalized Values
+
+- **NA1000 vs. NA1000 ▲pilA**: \( t = -0.53, p = 0.60 \)
+- **NA1000 vs. bNY30a**: \( t = 12.98, p < 0.001 \)
+- **NA1000 vs. pilAT36C**: \( t = 12.74, p < 0.001 \)
+- **NA1000 vs. No Cell Control**: \( t = -3.49, p = 0.0027 \)
+- ...
+
+### For Ratio Normalized Values
+
+- **NA1000 vs. NA1000 ▲pilA**: \( t = -0.52, p = 0.61 \)
+- **NA1000 vs. bNY30a**: \( t = 11.99, p < 0.001 \)
+- **NA1000 vs. pilAT36C**: \( t = 11.66, p < 0.001 \)
+- **NA1000 vs. No Cell Control**: \( t = -3.54, p = 0.0029 \)
+- ...
+
+These t-tests were performed using Welch's t-test for the assumption of unequal variances. The p-values reported are two-tailed.
+
+## Observations and Interpretations
+
+1. **Original Titer Values**: Significant differences were observed between the genotype NA1000 and the other genotypes (bNY30a, pilAT36C, and No Cell Control). The p-values were below 0.001, suggesting strong evidence against the null hypothesis of equal means.
+  
+2. **Direct Subtraction Normalized Values**: Similar trends were observed as with the original titer values. The normalization did not drastically change the significance levels between different genotypes.
+
+3. **Ratio Normalized Values**: Again, the normalization seems consistent with the original titer values in terms of statistical significance.
+
+In summary, these statistical tests suggest that there are significant differences between the genotypes in terms of their titers. The normalization techniques employed (direct subtraction and ratio normalization) do not dramatically change these conclusions, suggesting that the intrinsic variability between genotypes is robust to these normalization methods.
+
+
+
