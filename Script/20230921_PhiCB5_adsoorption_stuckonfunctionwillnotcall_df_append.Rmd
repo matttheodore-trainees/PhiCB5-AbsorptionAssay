@@ -79,13 +79,9 @@ reticulate::use_condaenv("C:/Users/MicrobeJ/anaconda3/envs/RStudio")
 
 ```{python, include = FALSE}
 
-# Import necessary libraries
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.stats import shapiro, levene, f_oneway
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
 ```
 
@@ -191,20 +187,43 @@ plt.show()
 
 ```{python}
 
-# Re-create an empty DataFrame to store the results of the Shapiro-Wilk test for normality, now including 'No Cell Control'
-shapiro_results_incl_control = pd.DataFrame(columns=['unique_id', 'genotype', 'statistic', 'p_value'])
+from scipy import stats
 
-# Loop through each unique_id and genotype to apply the Shapiro-Wilk test, now including 'No Cell Control'
-for unique_id in df_merged_new['unique_id'].unique():
-    for genotype in df_merged_new['genotype'].unique():
-        subset = df_merged_new[(df_merged_new['unique_id'] == unique_id) & (df_merged_new['genotype'] == genotype)]['normalized_titer_direct_sub']
-        if len(subset) > 2:  # Shapiro-Wilk test requires at least 3 observations
-            stat, p = shapiro(subset)
-            shapiro_results_incl_control = shapiro_results_incl_control.append({'unique_id': unique_id, 'genotype': genotype, 'statistic': stat, 'p_value': p}, ignore_index=True)
 
-# Display first few rows of the Shapiro-Wilk test results, now including 'No Cell Control'
-shapiro_results_incl_control.head()
+# Initialize an empty DataFrame to store statistical test results
+stat_results = pd.DataFrame(columns=['Normalization_Type', 'Test_Name', 'P-Value', 'Result'])
 
+# Function to perform normality test and variance homogeneity test
+def perform_stat_tests(df, column_name, norm_type, stat_results):
+    p_values = []
+    
+    # Perform Shapiro-Wilk Test for Normality on each genotype except 'No Cell Control'
+    for genotype in df[df['genotype'] != 'No Cell Control']['genotype'].unique():
+        data = df[(df['genotype'] == genotype)][column_name]
+        _, p_value = stats.shapiro(data)
+        p_values.append(p_value)
+        stat_results = stat_results.append({'Normalization_Type': norm_type, 'Test_Name': f'Shapiro_{genotype}', 'P-Value': p_value, 'Result': 'Pass' if p_value > 0.05 else 'Fail'}, ignore_index=True)
+        
+    # Perform Levene's Test for Variance Homogeneity
+    all_data = [df[df['genotype'] == genotype][column_name].values for genotype in df['genotype'].unique() if genotype != 'No Cell Control']
+    _, p_value = stats.levene(*all_data)
+    stat_results = stat_results.append({'Normalization_Type': norm_type, 'Test_Name': 'Levene', 'P-Value': p_value, 'Result': 'Pass' if p_value > 0.05 else 'Fail'}, ignore_index=True)
+    
+    return p_values, stat_results
+
+
+# Perform tests on original titer values
+
+p_values, stat_results = perform_stat_tests(df_merged_new, 'titer', 'Original', stat_results)
+
+# Perform tests on Direct Subtraction Normalized titer values
+perform_stat_tests('normalized_titer_direct_sub', 'Direct_Subtraction')
+
+# Perform tests on Ratio Normalized titer values
+perform_stat_tests('normalized_titer_ratio', 'Ratio_Normalization')
+
+# Display statistical test results
+stat_results
 
 
 ```
@@ -234,109 +253,54 @@ The results of the Shapiro-walk test and levene tests are below.
 
 1. **Shapiro-Wilk Test**: All genotypes passed the test for normality, supporting the null hypothesis. This allows us to proceed with ANOVA and other parametric tests.
 
-
-#### now averages of averages for normality and variance
-
-Up until now I believe we have been working with grouping od unique_ids which represent a single bioreplicate of genotypes (meaning all genotype should have 3 or more bioreplicates). 
-
-However,  since we have normalized presumably reducing the day to day variability of the experiment (technical) we may now think about used the mean of genotype, unique id pairings to take the mean of the genotype groupings across the days whichwould yield a single value with a singular standard deviation. Before we do this I believe now we could run levenes test for equal variances across groups (genotypes0 and check for normality of the groups (by genotype) would this make sense and be correct logic?> What would be the cons of this approach and what would be the pros ? 
-
-
-
-Pros of This Approach:
-Simplification: This would simplify the data structure considerably, making statistical tests less complex and easier to interpret.
-
-Reduced Noise: Normalization followed by averaging would likely reduce both biological and technical noise, making the signal (differences between genotypes) easier to detect.
-
-Statistical Power: With reduced noise and simpler data structure, you might gain statistical power, making it easier to detect real differences between groups.
-
-Cons of This Approach:
-Loss of Information: You would be discarding information about the within-group (i.e., within each unique ID) variability. This could be problematic if that variability is of scientific interest.
-
-Assumption of Equal Variance: By reducing the data in this manner, you're implicitly assuming that the variance within each genotype-unique ID pairing is comparable. If this is not the case, the averaged data may be misleading.
-
-Normality: This approach assumes that the mean of each genotype across unique IDs is normally distributed. While this is often a reasonable assumption due to the Central Limit Theorem, it should be empirically tested.
-
-Given these considerations, you could proceed with Levene's test for equal variances and a normality test on the reduced dataset (mean values for each genotype across unique IDs). This would give you a cleaner, simpler dataset to work with while also allowing you to test the necessary assumptions before proceeding to ANOVA.
-
-```{python}
-
-# Importing necessary libraries for statistical tests
-from scipy.stats import shapiro, levene
-
-# Calculate the mean and standard deviation of the Direct Subtraction normalized titer values for each genotype-unique_id pairing
-df_mean_std = df_merged_new.groupby(['genotype', 'unique_id'])['normalized_titer_direct_sub'].agg(['mean', 'std']).reset_index()
-
-# Run the Shapiro-Wilk test for normality on the mean values for each genotype
-shapiro_genotype_means = pd.DataFrame(columns=['genotype', 'statistic', 'p_value'])
-for genotype in df_mean_std['genotype'].unique():
-    subset = df_mean_std[df_mean_std['genotype'] == genotype]['mean']
-    if len(subset) > 2:  # Shapiro-Wilk test requires at least 3 observations
-        stat, p = shapiro(subset)
-        shapiro_genotype_means = shapiro_genotype_means.append({'genotype': genotype, 'statistic': stat, 'p_value': p}, ignore_index=True)
-
-# Run Levene's test for equal variances across genotypes using the mean values
-group_data_means = [df_mean_std[df_mean_std['genotype'] == genotype]['mean'] for genotype in df_mean_std['genotype'].unique()]
-levene_stat_means, levene_p_means = levene(*group_data_means)
-
-shapiro_genotype_means, levene_stat_means, levene_p_means
-
-
-
-```
-
-
-
 2. **Levene's Test**: The test for variance homogeneity also passed for all normalization types, again supporting the null hypothesis. This indicates that the variances are not significantly different across the genotypes, meeting the assumption for ANOVA.
 
 Given that the data meet the assumptions of a normal distribution, further statistical tests like the ANOVA or t-tests to compare the means between different genotypes can be performed (parametric testing)
 
-
-### One-Way ANOVA
-
-```{python}
-
-from scipy.stats import f_oneway
-
-# One-way ANOVA on Direct Subtraction normalized individual data points
-grouped_data_individual = [df_merged_new[df_merged_new['genotype'] == genotype]['normalized_titer_direct_sub'] for genotype in df_merged_new['genotype'].unique()]
-f_stat_individual, p_value_individual = f_oneway(*grouped_data_individual)
-
-# Calculate the mean of the genotype means for each genotype
-df_genotype_means = df_mean_std.groupby('genotype')['mean'].mean().reset_index()
-
-# One-way ANOVA on the calculated average of averages for the genotype groupings
-grouped_data_avg_of_avg = [df_mean_std[df_mean_std['genotype'] == genotype]['mean'] for genotype in df_mean_std['genotype'].unique()]
-f_stat_avg_of_avg, p_value_avg_of_avg = f_oneway(*grouped_data_avg_of_avg)
-
-f_stat_individual, p_value_individual, f_stat_avg_of_avg, p_value_avg_of_avg
-
-
-
-
-```
+## Parametric Pairing tests ??
 
 ```{python}
 
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
+# Initialize a dictionary to store test results
+statistical_results = {}
 
-# Tukey's HSD on individual data points
-tukey_result_individual = pairwise_tukeyhsd(df_merged_new['normalized_titer_direct_sub'], df_merged_new['genotype'])
+# List of columns to perform statistical tests on
+columns_to_test = ['titer', 'normalized_titer_direct_sub', 'normalized_titer_ratio']
 
-# Tukey's HSD on averages of averages
-tukey_result_avg_of_avg = pairwise_tukeyhsd(df_mean_std['mean'], df_mean_std['genotype'])
+# 1. Within-group Variability: Paired t-tests within each genotype and unique ID
+for column in columns_to_test:
+    ttest_results_within = []
+    unique_genotypes = df_merged_new['genotype'].unique()
+    unique_genotypes = [gen for gen in unique_genotypes if gen != 'No Cell Control']  # Exclude 'No Cell Control'
+    
+    for genotype in unique_genotypes:
+        for unique_id in df_merged_new['unique_id'].unique():
+            # Filter data for specific genotype and unique ID
+            df_filtered = df_merged_new[(df_merged_new['genotype'] == genotype) & (df_merged_new['unique_id'] == unique_id)]
+            df_no_cell_control = df_merged_new[(df_merged_new['genotype'] == 'No Cell Control') & (df_merged_new['unique_id'] == unique_id)]
+            
+            # Check if there are enough samples for t-test
+            if len(df_filtered) >= 2 and len(df_no_cell_control) >= 2:
+                t_stat, p_val = ttest_rel(df_filtered[column], df_no_cell_control[column])
+                ttest_results_within.append((genotype, unique_id, t_stat, p_val))
+    
+    statistical_results[f"Paired_ttest_{column}"] = ttest_results_within
 
-# Now you can proceed with formatting and filtering the Tukey results
-tukey_result_individual_df = format_tukey_summary(tukey_result_individual.summary())
-tukey_result_avg_of_avg_df = format_tukey_summary(tukey_result_avg_of_avg.summary())
+# 2. Between-group Variability: ANOVA across different genotypes
+for column in columns_to_test:
+    model = ols(f'{column} ~ C(genotype)', data=df_merged_new).fit()
+    anova_table = sm.stats.anova_lm(model, typ=2)
+    statistical_results[f"ANOVA_{column}"] = anova_table
 
-# Filter results to only include comparisons with 'No Cell Control'
-tukey_result_individual_df_filtered = tukey_result_individual_df[(tukey_result_individual_df['group1'] == 'No Cell Control') | (tukey_result_individual_df['group2'] == 'No Cell Control')]
-tukey_result_avg_of_avg_df_filtered = tukey_result_avg_of_avg_df[(tukey_result_avg_of_avg_df['group1'] == 'No Cell Control') | (tukey_result_avg_of_avg_df['group2'] == 'No Cell Control')]
+# 3. Post-hoc Analysis: Tukey's HSD
+for column in columns_to_test:
+    tukey_results = pairwise_tukeyhsd(df_merged_new[column], df_merged_new['genotype'], alpha=0.05)
+    statistical_results[f"TukeyHSD_{column}"] = tukey_results
 
-
-
+statistical_results.keys()
 ```
+
+
 
 ##### Analysis of Tests
 
