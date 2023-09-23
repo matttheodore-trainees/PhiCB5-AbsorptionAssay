@@ -1,0 +1,524 @@
+---
+title: "Untitled"
+author: "MT"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+# Data Analysis for PhiCB5 Adsorption Data
+
+## Introduction
+
+The experiment is run in biological replicates (have their own unique id) and technical triplicate for the biological replicates. 
+The data set is `data_master_final` from the PhiCB5 adsorption data. This document outlines the statistical tests carried out on the dataset.
+
+#### Data Preparation
+
+The dataset was loaded and the 'unique_id' column was specified as a string to prevent it from being parsed as a date.
+
+
+
+We'll use Python for data manipulation, statistical testing, and plotting. The analysis includes:
+
+- Data Import
+- Data Normalization
+- Summary Statistics
+- ANOVA and Tukey's Test
+- Plotting
+
+#### Library R
+
+```{r setup, include=FALSE}
+
+
+##here is what you would run in terminal to setup an environment like the rstudio environment
+
+#conda create --name RStudio python=3.8
+#conda activate RStudio
+#conda install pandas matplotlib seaborn scipy statsmodels 
+#conda env create -f env_config.yml
+
+#install.packages("reticulate")
+
+
+####### Is this here
+
+
+# # Set Python path
+#use_python(config$python_path)
+# 
+# # Install Python packages (optional)
+# py_install(config$packages)
+# 
+# 
+# reticulate::py_install("pandas")
+# reticulate::py_install("matplotlib")
+# reticulate::py_install("seaborn")
+# reticulate::py_install("scipy")
+# reticulate::py_install("statsmodels")
+
+library(reticulate)
+library(pandoc)
+
+
+
+```
+
+#### Initiate Python Env
+
+```{r, include = FALSE}
+
+
+reticulate::use_condaenv("C:/Users/MicrobeJ/anaconda3/envs/RStudio")
+
+
+
+```
+
+#### Library Python
+
+```{python, include = FALSE}
+
+# Import necessary libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import shapiro, levene, f_oneway
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+
+```
+
+
+Three types of normalization were performed:
+
+1. Direct Subtraction
+2. Ratio Normalization
+3. Z-Score Normalization
+
+
+
+
+
+
+```{python}
+
+# Load the newly uploaded dataset with the 'unique_id' column specified as string
+df_new = pd.read_excel("Data/data_master_final.xlsx", dtype={"unique_id": str})
+
+# To check unique values in the 'unique_id' column
+print(df_new['unique_id'].unique())
+
+
+# Calculate the mean titer of the "No Cell Control" for each unique ID
+no_cell_control_means_new = df_new[df_new['genotype'] == 'No Cell Control'].groupby('unique_id')['titer'].mean().reset_index()
+no_cell_control_means_new.rename(columns={'titer': 'mean_titer_no_cell_control'}, inplace=True)
+
+# Merge this information with the original DataFrame
+df_merged_new = pd.merge(df_new, no_cell_control_means_new, on='unique_id', how='left')
+
+# Perform the normalization calculations
+
+# Direct Subtraction
+df_merged_new['normalized_titer_direct_sub'] = df_merged_new['titer'] - df_merged_new['mean_titer_no_cell_control']
+
+# Ratio Normalization
+df_merged_new['normalized_titer_ratio'] = df_merged_new['titer'] / df_merged_new['mean_titer_no_cell_control']
+
+# Z-Score Normalization
+df_merged_new['normalized_titer_zscore'] = (df_merged_new['titer'] - df_merged_new['mean_titer_no_cell_control']) / df_merged_new['mean_titer_no_cell_control'].std()
+```
+
+
+
+## Plotting the different normalizations
+
+```{python}
+
+# Initialize the figure with modified dimensions for a 2x2 layout
+fig, axes = plt.subplots(2, 2, figsize=(20, 20))
+
+# Original Data
+sns.violinplot(x='genotype', y='titer', data=df_merged_new, ax=axes[0, 0], inner=None, color='lightgray')
+sns.stripplot(x='genotype', y='titer', data=df_merged_new, hue='unique_id', dodge=True, marker='o', alpha=0.7, jitter=True, ax=axes[0, 0])
+axes[0, 0].set_title('Original Data')
+axes[0, 0].set_xticklabels(axes[0, 0].get_xticklabels(), rotation=45, ha='right')
+axes[0, 0].legend().set_visible(False)  # Hide the legend
+
+# Direct Subtraction Normalization
+sns.violinplot(x='genotype', y='normalized_titer_direct_sub', data=df_merged_new, ax=axes[0, 1], inner=None, color='lightgray')
+sns.stripplot(x='genotype', y='normalized_titer_direct_sub', data=df_merged_new, hue='unique_id', dodge=True, marker='o', alpha=0.7, jitter=True, ax=axes[0, 1])
+axes[0, 1].set_title('Direct Subtraction Normalization')
+axes[0, 1].set_xticklabels(axes[0, 1].get_xticklabels(), rotation=45, ha='right')
+axes[0, 1].legend().set_visible(False)  # Hide the legend
+
+# Ratio Normalization
+sns.violinplot(x='genotype', y='normalized_titer_ratio', data=df_merged_new, ax=axes[1, 0], inner=None, color='lightgray')
+sns.stripplot(x='genotype', y='normalized_titer_ratio', data=df_merged_new, hue='unique_id', dodge=True, marker='o', alpha=0.7, jitter=True, ax=axes[1, 0])
+axes[1, 0].set_title('Ratio Normalization')
+axes[1, 0].set_xticklabels(axes[1, 0].get_xticklabels(), rotation=45, ha='right')
+axes[1, 0].legend().set_visible(False)  # Hide the legend
+
+# Z-Score Normalization
+sns.violinplot(x='genotype', y='normalized_titer_zscore', data=df_merged_new, ax=axes[1, 1], inner=None, color='lightgray')
+sns.stripplot(x='genotype', y='normalized_titer_zscore', data=df_merged_new, hue='unique_id', dodge=True, marker='o', alpha=0.7, jitter=True, ax=axes[1, 1])
+axes[1, 1].set_title('Z-Score Normalization')
+axes[1, 1].set_xticklabels(axes[1, 1].get_xticklabels(), rotation=45, ha='right')
+axes[1, 1].legend().set_visible(False)  # Hide the legend
+
+# Add a single legend for all subplots
+handles, labels = axes[0, 0].get_legend_handles_labels()
+fig.legend(handles, labels, title='Unique ID', loc='upper right')
+
+# Finalize the layout
+#plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust the rectangle in which to fit plots
+plt.show()
+
+
+```
+
+
+## Preliminary Statistical Tests
+
+#### Shapiro-Wilk Test for Normality and Levene's Test for Homogeneity of Variances
+
+
+**Shapiro-Wilk Test**: The null hypothesis (\(H_0\)) for this test is that the data for each genotype (excluding 'No Cell Control') follows a normal distribution. Rejecting this hypothesis would mean that the data does not follow a normal distribution, which is an assumption for many statistical tests like ANOVA.So first we need to check for normality.
+
+**Levene's Test**: The null hypothesis for the Levene's test is that all genotypes (again, excluding 'No Cell Control') have equal variances. Rejecting this hypothesis would imply that the variances are significantly different, which would violate the assumptions for tests like ANOVA.
+
+```{python}
+
+# Function for Shapiro-Wilk test for normality
+def perform_shapiro_test(df, col_name):
+    shapiro_results_list = []
+    for genotype in df['genotype'].unique():
+        subset = df[df['genotype'] == genotype][col_name]
+        if len(subset) > 2:  # Shapiro-Wilk test requires at least 3 observations
+            stat, p = shapiro(subset)
+            shapiro_results_list.append({'genotype': genotype, 'statistic': stat, 'p_value': p})
+    return pd.DataFrame(shapiro_results_list)
+
+# Function for Levene's test for homogeneity of variances
+def perform_levene_test(df, col_name):
+    levene_results_list = []
+    levene_stat, levene_p = levene(*[df[df['genotype'] == genotype][col_name] for genotype in df['genotype'].unique()])
+    levene_results_list.append({'Normalization_Type': col_name, 'Test_Name': 'Levene', 'P-Value': levene_p})
+    return pd.DataFrame(levene_results_list)
+
+# Function for One-Way ANOVA
+def perform_anova(df, col_name):
+    anova_test_results = []
+    f_stat, p_value = f_oneway(*[df[df['genotype'] == genotype][col_name].dropna() for genotype in df['genotype'].unique()])
+    anova_test_results.append({'Normalization_Type': col_name, 'F-Statistic': f_stat, 'P-Value': p_value})
+    return pd.DataFrame(anova_test_results)
+
+# Function for Tukey's HSD Test
+def perform_tukey_test(df, col_name):
+    tukey_test_results = []
+    tukey_result = pairwise_tukeyhsd(df[col_name].dropna(), df['genotype'])
+    tukey_test_results.append({'Normalization_Type': col_name, 'Tukey_HSD_Result': tukey_result})
+    return pd.DataFrame(tukey_test_results)
+
+
+# Initialize empty DataFrames to store the results
+shapiro_results_incl_control = pd.DataFrame()
+levene_test_df = pd.DataFrame()
+anova_test_df = pd.DataFrame()
+tukey_test_df = pd.DataFrame()
+
+# List of columns to perform the tests on
+test_columns = ['titer', 'normalized_titer_direct_sub', 'normalized_titer_ratio', 'normalized_titer_zscore']
+
+# Perform the tests
+for col in test_columns:
+    # Shapiro-Wilk Test for Normality
+    shapiro_df = perform_shapiro_test(df_merged_new, col)
+    shapiro_results_incl_control = pd.concat([shapiro_results_incl_control, shapiro_df], ignore_index=True)
+    
+    # Levene's Test for Homogeneity of Variances
+    levene_df = perform_levene_test(df_merged_new, col)
+    levene_test_df = pd.concat([levene_test_df, levene_df], ignore_index=True)
+    
+    # One-Way ANOVA
+    anova_df = perform_anova(df_merged_new, col)
+    anova_test_df = pd.concat([anova_test_df, anova_df], ignore_index=True)
+    
+    # Tukey's HSD Test
+    tukey_df = perform_tukey_test(df_merged_new, col)
+    tukey_test_df = pd.concat([tukey_test_df, tukey_df], ignore_index=True)
+
+# Show the first few rows of each test result to confirm
+shapiro_results_incl_control.head(), levene_test_df.head(), anova_test_df.head(), tukey_test_df.head()
+```
+
+##### Analysis of Tests
+
+1. **Shapiro-Wilk Test**: All genotypes passed the test for normality, supporting the null hypothesis. This allows us to proceed with ANOVA and other parametric tests.
+
+
+#### now averages of averages for normality and variance
+
+Up until now I believe we have been working with grouping od unique_ids which represent a single bioreplicate of genotypes (meaning all genotype should have 3 or more bioreplicates). 
+
+However,  since we have normalized presumably reducing the day to day variability of the experiment (technical) we may now think about used the mean of genotype, unique id pairings to take the mean of the genotype groupings across the days whichwould yield a single value with a singular standard deviation. Before we do this I believe now we could run levenes test for equal variances across groups (genotypes0 and check for normality of the groups (by genotype) would this make sense and be correct logic?> What would be the cons of this approach and what would be the pros ? 
+
+
+
+Pros of This Approach:
+Simplification: This would simplify the data structure considerably, making statistical tests less complex and easier to interpret.
+
+Reduced Noise: Normalization followed by averaging would likely reduce both biological and technical noise, making the signal (differences between genotypes) easier to detect.
+
+Statistical Power: With reduced noise and simpler data structure, you might gain statistical power, making it easier to detect real differences between groups.
+
+Cons of This Approach:
+Loss of Information: You would be discarding information about the within-group (i.e., within each unique ID) variability. This could be problematic if that variability is of scientific interest.
+
+Assumption of Equal Variance: By reducing the data in this manner, you're implicitly assuming that the variance within each genotype-unique ID pairing is comparable. If this is not the case, the averaged data may be misleading.
+
+Normality: This approach assumes that the mean of each genotype across unique IDs is normally distributed. While this is often a reasonable assumption due to the Central Limit Theorem, it should be empirically tested.
+
+Given these considerations, you could proceed with Levene's test for equal variances and a normality test on the reduced dataset (mean values for each genotype across unique IDs). This would give you a cleaner, simpler dataset to work with while also allowing you to test the necessary assumptions before proceeding to ANOVA.
+
+
+2. **Levene's Test**: The test for variance homogeneity also passed for all normalization types, again supporting the null hypothesis. This indicates that the variances are not significantly different across the genotypes, meeting the assumption for ANOVA.
+
+Given that the data meet the assumptions of a normal distribution, further statistical tests like the ANOVA or t-tests to compare the means between different genotypes can be performed (parametric testing)
+
+
+### One-Way ANOVA
+
+```{python}
+
+# One-way ANOVA on original data and all three normalization methods
+anova_test_results = []
+for col in ['titer', 'normalized_titer_direct_sub', 'normalized_titer_ratio', 'normalized_titer_zscore']:
+    f_stat, p_value = f_oneway(*[df_merged_new[df_merged_new['genotype'] == genotype][col].dropna() for genotype in df_merged_new['genotype'].unique()])
+    anova_test_results.append({'Normalization_Type': col, 'F-Statistic': f_stat, 'P-Value': p_value})
+
+# Convert the list of dictionaries to a DataFrame
+anova_test_df = pd.DataFrame(anova_test_results)
+
+# Tukey's HSD Test on original data and all three normalization methods
+tukey_test_results = []
+for col in ['titer', 'normalized_titer_direct_sub', 'normalized_titer_ratio', 'normalized_titer_zscore']:
+    tukey_result = pairwise_tukeyhsd(df_merged_new[col].dropna(), df_merged_new['genotype'])
+    tukey_test_results.append({'Normalization_Type': col, 'Tukey_HSD_Result': tukey_result})
+
+# Convert the list of dictionaries to a DataFrame
+tukey_test_df = pd.DataFrame(tukey_test_results)
+
+# Display One-Way ANOVA and Tukey's HSD test results
+anova_test_df, tukey_test_df
+
+
+
+```
+
+
+##### Analysis of Tests
+
+**ANOVA**: For all types of titer values (original, direct subtraction normalized, and ratio normalized), the p-values were less than 0.001. This strongly suggests rejecting the null hypothesis, indicating significant differences in means across genotypes.
+
+
+ **Tukey's HSD**: Similar to ANOVA, the results indicate that there are pairs of genotypes that have significantly different means, leading to the rejection of the null hypothesis for those pairs.
+ 
+ 
+ 
+
+
+
+
+
+
+
+
+
+## Interpretations
+
+1. **Original Titer Values**: Significant differences were observed between the genotype NA1000 and the other genotypes (bNY30a, pilAT36C, and No Cell Control). The p-values were below 0.001, suggesting strong evidence against the null hypothesis of equal means.
+  
+2. **Direct Subtraction Normalized Values**: Similar trends were observed as with the original titer values. The normalization did not drastically change the significance levels between different genotypes.
+
+3. **Ratio Normalized Values**: Again, the normalization seems consistent with the original titer values in terms of statistical significance.
+
+In summary, the statistical tests indicate that the different genotypes have significantly different titer levels. The assumptions for normality and homogeneity of variances were met, allowing for a robust statistical analysis. These findings are consistent across different types of normalization, suggesting that the observed differences are not artifacts of data transformation but are indicative of real biological variations.
+
+
+#### Averages of Averages 
+
+```{python}
+# Calculate the "average of averages" for each genotype for each unique_id and each normalization method
+average_of_averages_by_id_df = df_merged_new.groupby(['unique_id', 'genotype']).agg({
+    'titer': 'mean',
+    'normalized_titer_direct_sub': 'mean',
+    'normalized_titer_ratio': 'mean',
+    'normalized_titer_zscore': 'mean'
+}).reset_index()
+
+# Calculate the overall "average of averages" for each genotype and each normalization method
+average_of_averages_overall_df = average_of_averages_by_id_df.groupby('genotype').agg({
+    'titer': ['mean', 'std'],
+    'normalized_titer_direct_sub': ['mean', 'std'],
+    'normalized_titer_ratio': ['mean', 'std'],
+    'normalized_titer_zscore': ['mean', 'std']
+}).reset_index()
+
+# Flatten the multi-index for easier handling
+average_of_averages_overall_df.columns = ['_'.join(col).rstrip('_') for col in average_of_averages_overall_df.columns.values]
+
+# Show the new DataFrame to confirm
+average_of_averages_overall_df
+
+
+
+
+```
+
+
+#### Statistics of Averages
+```{python}
+
+from scipy.stats import ttest_ind
+
+# Perform statistical tests on the "average of averages" data
+
+# Initialize empty DataFrames to store the results for "average of averages"
+shapiro_avg_of_avg_results = pd.DataFrame()
+anova_avg_of_avg_test_df = pd.DataFrame()
+tukey_avg_of_avg_test_df = pd.DataFrame()
+
+# Perform the tests on "average of averages" data
+for col in test_columns:
+    # Shapiro-Wilk Test for Normality on average of averages
+    shapiro_avg_of_avg_df = perform_shapiro_test(average_of_averages_by_id_df, col)
+    shapiro_avg_of_avg_results = pd.concat([shapiro_avg_of_avg_results, shapiro_avg_of_avg_df], ignore_index=True)
+    
+    # One-Way ANOVA on average of averages
+    anova_avg_of_avg_df = perform_anova(average_of_averages_by_id_df, col)
+    anova_avg_of_avg_test_df = pd.concat([anova_avg_of_avg_test_df, anova_avg_of_avg_df], ignore_index=True)
+    
+
+
+# Show the first few rows of each test result to confirm
+shapiro_avg_of_avg_results, anova_avg_of_avg_test_df
+
+
+# Create an empty list to store t-test results
+ttest_results = []
+
+# Calculate the t-test for each genotype against the "No Cell Control" for each normalization method
+for col in ['titer', 'normalized_titer_direct_sub', 'normalized_titer_ratio', 'normalized_titer_zscore']:
+    # Extract the "average of averages" data for the "No Cell Control"
+    no_cell_control_data = average_of_averages_by_id_df[average_of_averages_by_id_df['genotype'] == 'No Cell Control'][col]
+    
+    # Loop through each genotype to perform the t-test
+    for genotype in average_of_averages_by_id_df['genotype'].unique():
+        if genotype != 'No Cell Control':
+            # Extract the "average of averages" data for the current genotype
+            genotype_data = average_of_averages_by_id_df[average_of_averages_by_id_df['genotype'] == genotype][col]
+            
+            # Perform the t-test
+            t_stat, p_value = ttest_ind(no_cell_control_data, genotype_data)
+            
+            # Store the results
+            ttest_results.append({
+                'Normalization_Type': col,
+                'Genotype': genotype,
+                'T-Statistic': t_stat,
+                'P-Value': p_value
+            })
+
+# Convert the list of dictionaries to a DataFrame
+ttest_results_df = pd.DataFrame(ttest_results)
+
+# Show the means for each genotype used in the t-test for each normalization type
+mean_values = average_of_averages_by_id_df.groupby(['genotype']).agg({
+    'titer': 'mean',
+    'normalized_titer_direct_sub': 'mean',
+    'normalized_titer_ratio': 'mean',
+    'normalized_titer_zscore': 'mean'
+}).reset_index()
+
+ttest_results_df, mean_values
+
+
+
+```
+#### Averages of Averages p-values
+
+Upon re-evaluating the t-test calculations, it appears that the P-values fluctuate based on the normalization method and genotype under comparison. Let's delve into the details:
+
+### T-Test Results
+The table below outlines the P-values for each pairwise comparison between each genotype and the "No Cell Control" across different normalization methods:
+
+| Normalization_Type        | Genotype      | T-Statistic  | P-Value         |
+|---------------------------|--------------|--------------|-----------------|
+| titer                     | NA1000        | 2.73         | 0.023           |
+| titer                     | NA1000 ▲pilA  | 2.23         | 0.053           |
+| titer                     | bNY30a        | 8.34         | 0.000016        |
+| titer                     | pilAT36C      | 6.43         | 0.0002          |
+| normalized_titer_direct_sub | NA1000     | 3.19         | 0.011           |
+| normalized_titer_direct_sub | NA1000 ▲pilA | 1.87       | 0.094           |
+| normalized_titer_direct_sub | bNY30a     | 19.69        | 0.0000000104    |
+| normalized_titer_direct_sub | pilAT36C   | 18.75        | 0.0000000676    |
+| normalized_titer_ratio    | NA1000       | 3.08         | 0.013           |
+| normalized_titer_ratio    | NA1000 ▲pilA | 1.84         | 0.099           |
+| normalized_titer_ratio    | bNY30a       | 16.13        | 0.0000000599    |
+| normalized_titer_ratio    | pilAT36C     | 21.97        | 0.0000000194    |
+| normalized_titer_zscore   | NA1000       | 3.19         | 0.011           |
+| normalized_titer_zscore   | NA1000 ▲pilA | 1.87         | 0.094           |
+| normalized_titer_zscore   | bNY30a       | 19.69        | 0.0000000104    |
+| normalized_titer_zscore   | pilAT36C     | 18.75        | 0.0000000676    |
+
+### Mean Values Used for T-Test
+
+Here are the "average of averages" values used for each genotype in the t-tests:
+
+| Genotype      | Titer  | Normalized Direct Sub | Normalized Ratio | Normalized Z-Score |
+|--------------|--------|-----------------------|------------------|--------------------|
+| NA1000        | 166.25 | -19.75                | 0.89             | -0.96              |
+| NA1000 ▲pilA  | 170.5  | -15.5                 | 0.92             | -0.75              |
+| No Cell Control | 203.71 | 0.0               | 1.0              | ~0                 |
+| bNY30a        | 82.58  | -103.42              | 0.44             | -5.03              |
+| pilAT36C      | 107.44 | -119.89              | 0.47             | -5.84              |
+
+### On the Issue of Overlapping Error Bars
+The presence of overlapping error bars does not necessarily imply that two groups are not significantly different. Statistical significance is determined by the P-value of the statistical test (in this case, the t-test), not by visual inspection of error bars. The t-test takes into account the sample size and standard deviation, which may provide enough power to detect a significant difference even if the error bars overlap.
+
+However, the fact that some of the P-values are close to the 0.05 threshold (especially for NA1000 and NA1000 ▲pilA in some cases) could indicate that the difference might not be as robust as for other comparisons (like bNY30a or pilAT36C against the No Cell Control).
+
+
+#### Barplots
+
+```{python}
+
+# Creating the barplot using the "average of averages" data
+
+# Initialize the figure with modified dimensions
+fig, axes = plt.subplots(2, 2, figsize=(20, 20))
+
+# List of normalization types
+norm_types = ['titer', 'normalized_titer_direct_sub', 'normalized_titer_ratio', 'normalized_titer_zscore']
+
+# Titles for subplots
+titles = ['Original Data', 'Direct Subtraction Normalization', 'Ratio Normalization', 'Z-Score Normalization']
+
+# Create barplots for each normalization type
+for ax, col, title in zip(axes.flatten(), norm_types, titles):
+    sns.barplot(x='genotype', y=f"{col}_mean", data=average_of_averages_overall_df, ax=ax, yerr=average_of_averages_overall_df[f"{col}_std"], capsize=.2)
+    ax.set_title(title)
+    ax.set_ylabel('Mean Titer')
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+
+# Finalize the layout
+plt.tight_layout()
+plt.show()
+
+
+
+```
+
