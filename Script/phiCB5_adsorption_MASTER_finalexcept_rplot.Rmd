@@ -62,7 +62,20 @@ We'll use Python for data manipulation, statistical testing, and plotting. The a
 library(reticulate)
 library(pandoc)
 
+packages <- c("ggplot2", "dplyr", "tidyr", "readxl", "ggpubr", "skimr", "DataExplorer", "tidyverse", "skimr", "svglite", "readxl","tidyxl", "ggforce", "ggpubr", "ggsci", "ggthemes", "ragg", "magrittr", "reprex", "patchwork", "writexl", 'magick', 'forcats', 'reticulate')
 
+# list of packages sometimes I use [   "searcher", "errorist",
+
+install.packages(setdiff(packages, rownames(installed.packages())))
+
+update.packages (packages)
+
+for (i in 1:length(packages)) {
+
+library(packages[i], character.only = TRUE)
+
+
+}
 
 ```
 
@@ -86,8 +99,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.stats import shapiro, levene, f_oneway
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
+
 
 ```
 
@@ -190,6 +202,9 @@ plt.show()
 **Levene's Test**: The null hypothesis for the Levene's test is that all genotypes (again, excluding 'No Cell Control') have equal variances. Rejecting this hypothesis would imply that the variances are significantly different, which would violate the assumptions for tests like ANOVA.
 
 ```{python}
+
+from scipy.stats import shapiro, levene, f_oneway
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
 # Function for Shapiro-Wilk test for normality
 def perform_shapiro_test(df, col_name):
@@ -521,4 +536,161 @@ plt.show()
 
 
 ```
+## Plotting pilA Mutant EOPs
 
+```{python}
+# Define the custom order for genotypes
+custom_order = [
+    'NA1000',
+    'NA1000 ▲pilA',
+    'bNY30a', 
+    'pilAT36C']
+
+# Filter the DataFrame to only include genotypes that exist in the custom order
+average_of_averages_overall_df_filtered = average_of_averages_overall_df[average_of_averages_overall_df['genotype'].isin(custom_order)]
+
+# Sort the DataFrame based on the custom order
+average_of_averages_overall_df_sorted = average_of_averages_overall_df_filtered.set_index('genotype').loc[custom_order].reset_index()
+
+# Initialize the figure
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Create a barplot for the specific normalization type ('normalized_titer_direct_sub' for example)
+sns.barplot(x='genotype', y='normalized_titer_ratio_mean', data=average_of_averages_overall_df_sorted, ax=ax, yerr=average_of_averages_overall_df_sorted['normalized_titer_ratio_std'], capsize=.2)
+
+# Set title and labels
+ax.set_title('Ratio Normalization')
+ax.set_ylabel('EOP (Efficiency of Plating)')
+ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+
+# Finalize the layout
+plt.show()
+
+
+
+```
+#### Set Up Plotting Structures and Themes 
+```{r}
+
+library(ggplot2)
+library(ggthemes)
+
+
+# My Theme
+
+
+
+# Modify theme_pubr function for mytheme
+theme_pubr_MT <- function(){
+  font <- "Arial" # assign font family upfront
+  
+  # Load theme_pubr and replace its elements
+  theme_pubr() %+replace%
+    
+    # Set the background color and size of the plot area
+    theme(
+      # Set the font size and style of the plot title
+      plot.title = element_text(size = 7, face = "bold"),
+      # Set the font size of the axis titles
+      axis.title = element_text(size = 6),
+      # Set the font size of the axis labels
+      axis.text = element_text(size = 5),
+      # Set the font size of the legend title and text
+      legend.title = element_text(size = 6),
+      legend.text = element_text(size = 5), 
+      # Remove all background
+      panel.background = element_blank(),
+      plot.background = element_blank(),
+      panel.grid = element_blank()
+    )
+  
+}
+
+```
+
+#### Basic Plot
+
+```{r}
+
+# Convert the Python DataFrame to an R DataFrame
+average_of_averages_overall_df_sorted <- py$average_of_averages_overall_df_sorted
+
+# Define custom order for the genotypes
+custom_order <- factor(
+    c('NA1000',
+    'NA1000 ▲pilA',
+    'bNY30a', 
+    'pilAT36C'),
+    levels = c('NA1000',
+    'NA1000 ▲pilA',
+    'bNY30a', 
+    'pilAT36C')
+)
+
+# Make the 'genotype' column a factor with custom order
+average_of_averages_overall_df_sorted$genotype <- factor(
+    average_of_averages_overall_df_sorted$genotype,
+    levels = custom_order
+)
+
+# Create the barplot using ggplot2
+adsorption_assay_python <- ggplot(data = average_of_averages_overall_df_sorted, aes(x = genotype, y = normalized_titer_ratio_mean)) +
+    geom_bar(stat = 'identity', position = 'dodge', aes(fill = genotype)) +
+    geom_errorbar(
+        aes(
+            ymin = normalized_titer_ratio_mean - normalized_titer_ratio_std,
+            ymax = normalized_titer_ratio_mean + normalized_titer_ratio_std,
+            width = 0.2
+        ),
+        position = position_dodge(0.9)
+    ) +
+    scale_fill_manual(values = c("red", "blue", "green", "orange")) +
+    theme_minimal() +
+    labs(
+        title = "Adsorption Assay of ΦCb5 to varying Caulobacter Strains and Mutants",
+        x = "Genotype",
+         y = "EOP(Efficiency of Plating, Normalized to No Cell Control)"
+    ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+adsorption_assay_python
+```
+```{r}
+
+# Initialize the ggplot object
+adsorption_assay <- ggplot(data = average_of_averages_overall_df_sorted, aes(x = genotype, y = normalized_titer_ratio_mean)) +
+  geom_bar(stat = 'identity', position = 'dodge', aes(fill = genotype)) +
+  geom_errorbar(
+    aes(
+      ymin = normalized_titer_ratio_mean - normalized_titer_ratio_std,
+      ymax = normalized_titer_ratio_mean + normalized_titer_ratio_std,
+      width = 0.2
+    ),
+    position = position_dodge(0.9)
+  ) +
+  labs(
+    title = "EOP Effect of PilAT36C",
+    x = 'Genotype',
+    y = "EOP(Efficiency of Plating, normalized to wt)"
+  )
+
+# Add additional themes and scales
+adsorption_assay_final <- adsorption_assay + theme_pubr_MT() + scale_color_npg() + theme(plot.margin = unit(c(1,1,1,1), "mm"))
+
+adsorption_assay_python
+
+adsorption_assay
+
+adsorption_assay_final
+
+```
+
+
+#### Saving the final Plot
+
+```{r}
+
+ggsave("Adorption of PhiCb5.pdf ", path = "Output/Plots", device = "pdf", plot = adsorption_assay_final, width = 70, height = 80 , units = "mm")
+
+
+```
